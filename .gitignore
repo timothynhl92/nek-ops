@@ -4,6 +4,13 @@
 ~$*.docx
 *.tmp
 
+# Generated documents (README §3) — the PDF is a build artefact, not source
+output/
+
+# Python
+__pycache__/
+*.pyc
+
 # OS clutter
 Thumbs.db
 Desktop.ini
