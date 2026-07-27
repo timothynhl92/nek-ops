@@ -4,7 +4,7 @@
 ~$*.docx
 *.tmp
 
-# Generated documents (README §3) — the PDF is a build artefact, not source
+# Generated documents (README section 3) - build artefacts, not source
 output/
 
 # Python
