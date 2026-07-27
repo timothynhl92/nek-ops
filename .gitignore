@@ -1,0 +1,10 @@
+# Excel/Office temporary lock files
+~$*.xlsx
+~$*.xlsm
+~$*.docx
+*.tmp
+
+# OS clutter
+Thumbs.db
+Desktop.ini
+.DS_Store
