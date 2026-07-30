@@ -55,7 +55,7 @@ def excel_app() -> Iterator["win32com.client.CDispatch"]:
 
 
 @contextlib.contextmanager
-def _workbook(app, path: Path, read_only: bool = False) -> Iterator["win32com.client.CDispatch"]:
+def open_workbook(app, path: Path, read_only: bool = False) -> Iterator["win32com.client.CDispatch"]:
     """Open ``path`` in ``app``; close without saving unless told otherwise."""
     if not path.is_file():
         raise FileNotFoundError(path)
@@ -108,17 +108,67 @@ def _use_local_printer(app, preferred: str | None = None) -> str | None:
     return original
 
 
+def export_worksheet(
+    app,
+    wb,
+    sheet: str,
+    dest: str | Path,
+    printer: str | None = None,
+    draft_header: str | None = None,
+) -> Path:
+    """Export one worksheet of an already-open workbook to PDF.
+
+    Exposed separately from :func:`export_pdf` so a caller can sync, fill,
+    recalculate, verify and export inside a single Excel session. Launching
+    Excel costs roughly fifty seconds, so doing that once instead of five times
+    is the difference between a usable tool and an unusable one.
+
+    ``draft_header`` writes a centre page header on the worksheet. It is set on
+    the caller's working copy, never on the template on disk.
+    """
+    dest = Path(dest).resolve()
+    dest.parent.mkdir(parents=True, exist_ok=True)
+    ws = wb.Worksheets(sheet)
+
+    # Switch printers *before* touching PageSetup: writing any PageSetup
+    # property round-trips to the active printer's driver, so setting a header
+    # while the WSD default is selected stalls exactly as the export does.
+    original_printer = _use_local_printer(app, printer)
+    if draft_header is not None:
+        ws.PageSetup.CenterHeader = draft_header
+
+    try:
+        ws.ExportAsFixedFormat(
+            Type=XL_TYPE_PDF,
+            Filename=str(dest),
+            Quality=XL_QUALITY_STANDARD,
+            IncludeDocProperties=False,
+            IgnorePrintAreas=False,
+            OpenAfterPublish=False,
+        )
+    except Exception as exc:  # noqa: BLE001 - surfaced with context below
+        raise RecalcError(f"PDF export failed for sheet {sheet!r}: {exc}") from exc
+    finally:
+        if original_printer:
+            with contextlib.suppress(Exception):
+                app.ActivePrinter = original_printer
+
+    if not dest.is_file():
+        raise RecalcError(f"Excel reported success but {dest} was not written")
+    return dest
+
+
 def sheet_names(path: str | Path) -> list[str]:
     """Return the worksheet names of ``path``, in tab order."""
     src = Path(path).resolve()
-    with excel_app() as app, _workbook(app, src, read_only=True) as wb:
+    with excel_app() as app, open_workbook(app, src, read_only=True) as wb:
         return [ws.Name for ws in wb.Worksheets]
 
 
 def recalc(path: str | Path) -> Path:
     """Fully rebuild every formula in ``path`` and save it in place."""
     target = Path(path).resolve()
-    with excel_app() as app, _workbook(app, target) as wb:
+    with excel_app() as app, open_workbook(app, target) as wb:
         app.CalculateFullRebuild()
         try:
             wb.Save()
@@ -134,7 +184,7 @@ def read_cells(path: str | Path, sheet: str, cells: dict[str, str]) -> dict[str,
     formulas *evaluate*, not that they are *right*.
     """
     src = Path(path).resolve()
-    with excel_app() as app, _workbook(app, src, read_only=True) as wb:
+    with excel_app() as app, open_workbook(app, src, read_only=True) as wb:
         app.CalculateFullRebuild()
         ws = wb.Worksheets(sheet)
         return {label: ws.Range(ref).Value for label, ref in cells.items()}
@@ -160,7 +210,7 @@ def export_pdf(
     dest = Path(dest).resolve()
     dest.parent.mkdir(parents=True, exist_ok=True)
 
-    with excel_app() as app, _workbook(app, src, read_only=not recalculate) as wb:
+    with excel_app() as app, open_workbook(app, src, read_only=not recalculate) as wb:
         if recalculate:
             app.CalculateFullRebuild()
         original_printer = _use_local_printer(app, printer)
