@@ -26,7 +26,7 @@ REPO_ROOT = Path(__file__).resolve().parents[3]
 sys.path.insert(0, str(REPO_ROOT / "scripts"))
 
 import counters  # noqa: E402
-from amount_in_words import words_for_cell  # noqa: E402
+from amount_in_words import CURRENCIES, words_for_cell  # noqa: E402
 from excel_engine import excel_app, export_worksheet, open_workbook  # noqa: E402
 from fill_template import (  # noqa: E402
     CP_GUARD,
@@ -44,7 +44,7 @@ from ref_and_filename import (  # noqa: E402
     counterparty_token,
     load_vendor_index,
 )
-from registers import load_registers, sync_mirrors  # noqa: E402
+from registers import load_registers, sync_currency, sync_mirrors  # noqa: E402
 
 TEMPLATE = REPO_ROOT / "templates" / "NEK_Document_Templates.xlsx"
 REGISTER = REPO_ROOT / "registers" / "NEK_Master_Registers.xlsx"
@@ -54,10 +54,9 @@ DOCTYPE = "PV"
 DRAFT_PREFIX = "DRAFT_"
 DRAFT_HEADER = "DRAFT - NOT ISSUED - no counter consumed"
 
-# §8 restricts the first skill to MYR; the template hard-codes "MYR" in E11 and
-# "Ringgit Malaysia :" in A20, so a non-MYR voucher would print the wrong
-# currency next to correct foreign-currency words.
-SUPPORTED_CURRENCY = "MYR"
+# Whatever the wording table covers. Driven from one place so the template's
+# printed label and the script's written words cannot disagree.
+SUPPORTED_CURRENCIES = set(CURRENCIES)
 
 # Rounding tolerance when comparing Excel's total to Python's. Excel returns a
 # float; the line items are Decimals.
@@ -126,13 +125,15 @@ def validate(
             "first."
         )
 
-    if account.currency.upper() != SUPPORTED_CURRENCY:
+    # The template's currency label (E11) and words label (A20) now derive from
+    # the account currency, so any currency the wording table covers is safe.
+    # An unknown one still fails, in amount_in_words, before anything is drawn.
+    if account.currency.upper() not in SUPPORTED_CURRENCIES:
         raise GenerationError(
-            f"account {key} is denominated in {account.currency}, but this "
-            f"skill is restricted to {SUPPORTED_CURRENCY}. The template "
-            'hard-codes "MYR" (E11) and "Ringgit Malaysia :" (A20), so a '
-            f"{account.currency} voucher would print the wrong currency. "
-            "Make those two cells formula-driven before lifting this guard."
+            f"account {key} is denominated in {account.currency}, which has no "
+            f"wording defined. Known: {', '.join(sorted(SUPPORTED_CURRENCIES))}. "
+            "Add it to CURRENCIES in scripts/amount_in_words.py -- the template "
+            "picks it up automatically."
         )
 
     validate_line_items(line_items)
@@ -183,6 +184,7 @@ def generate(args: argparse.Namespace) -> Path:
         with excel_app() as app, open_workbook(app, working) as wb:
             # Master register wins, every run, before anything is filled.
             sync_mirrors(wb, entities, accounts)
+            sync_currency(wb)
 
             ws = wb.Worksheets(SHEET_NAME)
             fill_payment_voucher(

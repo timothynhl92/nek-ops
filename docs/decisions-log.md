@@ -32,6 +32,31 @@ afterwards.
 
 ---
 
+## 2026-07-31 — Currency labels are formula-driven; MYR restriction lifted
+
+`E11` (currency code) and `A20` (amount-in-words label) on the Payment Voucher,
+Receiving Voucher, Invoice and Official Receipt now derive from the **bank
+account's** currency via a new `K9` control cell.
+
+**The account governs, not the entity.** A voucher pays out of a specific
+account. HHIL settles the question: functional currency HKD, BOC account MYR —
+testing the entity would have blocked a perfectly ordinary MYR payment.
+
+Wording lives in `CURRENCIES` in `scripts/amount_in_words.py` and is written
+into a `_Currency` sheet on every run, the same way the register mirrors are.
+Keeping it in two places would eventually print "Hong Kong Dollars : Two
+Thousand Ringgit …". Adding a currency now needs no template edit.
+
+**Salary Slip deliberately untouched.** It hard-codes MYR in 17 cells, and
+Malaysian payroll with EPF/SOCSO/PCB is MYR by law. Revisit only if an entity
+ever runs a foreign payroll.
+
+Verified with a real HKD case (NCL|BOCOM → Cavatina, HK property management):
+the document prints `HKD` and `Hong Kong Dollars :`, and the MYR path is
+unchanged.
+
+---
+
 ## 2026-07-31 — `INV` means the invoice we issue; supplier invoices become `PINV`
 
 `08 Code Lists` had `INV` = "Supplier invoice (payable)" and `SIV` = "Sales

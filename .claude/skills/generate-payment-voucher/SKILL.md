@@ -68,16 +68,28 @@ The running number is **never** passed by hand — it comes from the counter (§
 Step 6 exists because a clean recalculation proves formulas *evaluate*, not
 that they are *right* (§7). It has already caught one real defect.
 
+## Currency
+
+The **bank account's** currency governs, not the entity's — a voucher pays out
+of a specific account. HHIL is the case that proves it: functional currency
+HKD, but its BOC account is MYR.
+
+`MYR`, `HKD` and `USD` are supported. The currency code (E11) and the
+amount-in-words label (A20) both derive from the account, via a `_Currency`
+sheet that is rewritten from `scripts/amount_in_words.py` on every run — so the
+label the template prints and the words the script writes cannot disagree.
+
+To add a currency, add it to `CURRENCIES` in `amount_in_words.py`. The template
+picks it up automatically; no template edit is needed.
+
 ## Current restrictions
 
-- **MYR only.** The template hard-codes `MYR` in E11 and `Ringgit Malaysia :`
-  in A20. A HKD or USD voucher would print the wrong currency beside correct
-  foreign-currency words, so those accounts are refused. Lifting this requires
-  making both cells formula-driven from the entity currency first.
 - **Six line items.** The grid is rows 12–17. A seventh is a hard error, never
   a silent drop.
 - **On or after 2026-09.** Earlier dates belong to the previous manual
   sequence.
+- **No placeholder bank codes.** An account recorded as `TBC` and similar is
+  refused: the reference would be meaningless.
 
 ## Example
 

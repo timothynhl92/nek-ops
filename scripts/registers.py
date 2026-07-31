@@ -22,9 +22,12 @@ HEADER_ROW = 4  # data starts on the row below
 
 MIRROR_ENTITY = "_EntityData"
 MIRROR_BANK = "_BankAccounts"
+MIRROR_CURRENCY = "_Currency"
 MIRROR_FIRST_ROW = 3
 # Lookup formulas span rows 3:100; anything past that is invisible to them.
 MIRROR_LAST_ROW = 100
+# The currency table is small and its formulas span 3:20.
+CURRENCY_LAST_ROW = 20
 
 # Values the register uses to mean "not applicable". Written through to the
 # mirror they would print as a literal "Co. Reg. No. N/A" in the letterhead.
@@ -202,6 +205,28 @@ def sync_mirrors(wb, entities: dict[str, Entity], accounts: dict[str, BankAccoun
         ws.Cells(row, 5).Value = account.currency
         ws.Cells(row, 6).Value = account.account_name
         ws.Cells(row, 7).Value = account.account_no
+
+
+def sync_currency(wb) -> None:
+    """Write the currency wording table from :mod:`amount_in_words`.
+
+    The template prints the major-unit name ("Ringgit Malaysia :") while the
+    script writes the words that follow it. If those two disagreed, a document
+    would read "Hong Kong Dollars : Two Thousand Ringgit ...". Rather than keep
+    the wording in two places and hope, the Python module is the source and the
+    sheet is rewritten from it on every run.
+    """
+    from amount_in_words import CURRENCIES  # local import: avoids a cycle
+
+    ws = wb.Worksheets(MIRROR_CURRENCY)
+    ws.Range(
+        ws.Cells(MIRROR_FIRST_ROW, 1), ws.Cells(CURRENCY_LAST_ROW, 3)
+    ).ClearContents()
+    for offset, (code, (major, minor)) in enumerate(sorted(CURRENCIES.items())):
+        row = MIRROR_FIRST_ROW + offset
+        ws.Cells(row, 1).Value = code
+        ws.Cells(row, 2).Value = major
+        ws.Cells(row, 3).Value = minor
 
 
 def _clear_mirror(ws, columns: int) -> None:
