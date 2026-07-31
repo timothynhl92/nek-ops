@@ -32,6 +32,83 @@ afterwards.
 
 ---
 
+## 2026-07-31 — `INV` means the invoice we issue; supplier invoices become `PINV`
+
+`08 Code Lists` had `INV` = "Supplier invoice (payable)" and `SIV` = "Sales
+invoice issued (receivable)". README §4 and §5 say the opposite: `INV` belongs
+to the outward-facing family alongside `OR`.
+
+**Settled by the template, not by preference.** The `Invoice` sheet reads
+`Billed To :` and builds `"INV/"&…` — the outward meaning is already
+implemented in the artefact the whole generation layer depends on.
+
+So `INV` = invoice issued by us (counterparty: customer / tenant). The supplier
+invoice we *receive* keeps its concept under the new code `PINV`. `SIV` is
+retired, having become a duplicate of `INV`.
+
+This matters for filing, not for PV. It had to be settled before
+`generate-invoice` is built, since the wrong choice misfiles a year of
+documents.
+
+---
+
+## 2026-07-31 — Vendor register seeded with mnemonic codes
+
+17 vendors, derived from the distinct Payable counterparties in
+`04 Recurring Payments`.
+
+Codes are **mnemonic** (`KWSP`, `TNB`, `KCK-AUD`), not sequential. The vendor
+code becomes the counterparty field of every filename, so `V-001` would make
+the document store unsearchable.
+
+Specific decisions:
+
+- **KCK is two vendors.** `KCK-AUD` (KCK & Associates PLT, auditor) and
+  `KCK-TAX` (KCK Consultancy Services Sdn Bhd, tax agent) are different legal
+  entities providing different services.
+- **`TMUNIFI`, not `TM`.** WT's masked counterparty renders as `TM*`; two
+  unrelated companies sharing a filename token would be unrecoverable.
+- **Payroll excluded.** Salary runs through `SAL`, not a vendor PV.
+- **Receivable counterparties excluded.** Tenants are not vendors. They need
+  their own home before `generate-official-receipt` is built.
+- **Nothing invented.** Registration numbers, contacts and payment terms are
+  blank rather than guessed; the bank-detail verification columns stay blank
+  for a human, per §2.
+
+**Left unmapped:** WT's two payments go to a counterparty masked as `TM*`, as
+its bank is masked as `BN*`. Belongs with the WT open items in §9.
+
+---
+
+## 2026-07-31 — CSK|BOCOM verification recorded
+
+`09 Bank Accounts` row 16: verified 2026-07-31 by Timothy Ng, on his explicit
+attestation that the Sha Tin rental is transacted through NCL's Bank of
+Communications account.
+
+Note the §2 control was only lightly engaged here: no new account number was
+introduced (the row is a re-keyed copy of `NCL|BOCOM`), and the instruction
+came directly from the operator rather than from an inbound request that could
+have been spoofed.
+
+---
+
+## 2026-07-31 — Excel can hand back a read-only copy and swallow the save
+
+Two runs of the vendor migration reported success and wrote nothing. The
+register was open in another Excel window, so `Workbooks.Open` returned a
+read-only copy rather than refusing, and with `DisplayAlerts = False` the
+subsequent `Save()` was a silent no-op.
+
+`excel_engine.open_workbook()` now raises when it is handed a read-only
+workbook it did not ask for. Verified by holding the file open in a second
+Excel instance and confirming the guard fires.
+
+**Operational note:** close the register and template before running anything
+that writes to them.
+
+---
+
 ## 2026-07-30 — Counter starts at 001 from the 2026-09 cutover
 
 Clean break; the pre-cutover manual sequence is not continued. Document dates
