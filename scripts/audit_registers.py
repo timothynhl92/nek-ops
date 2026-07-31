@@ -221,19 +221,30 @@ def check_orphans(wb, entities, accounts, report: Report) -> None:
     for _, value in _column(wb[PROPERTY_SHEET], 2):
         active.add(str(value).strip())
 
-    idle_entities = sorted(set(entities) - active)
+    # An entity deliberately marked Dormant is expected to have no activity.
+    # Warning about it every run would be noise, and noise is what stops people
+    # reading audits at all.
+    dormant = {
+        str(wb[ENTITY_SHEET].cell(row=row, column=1).value).strip()
+        for row, status in _column(wb[ENTITY_SHEET], 13)
+        if str(status).strip().lower() != "active"
+    }
+    if dormant:
+        report.note(f"non-active entities excluded from orphan checks: {', '.join(sorted(dormant))}")
+
+    idle_entities = sorted(set(entities) - active - dormant)
     if idle_entities:
         report.warn(
             ENTITY_SHEET,
-            f"entities with no property and no recurring payment: {', '.join(idle_entities)}",
+            f"active entities with no property and no recurring payment: {', '.join(idle_entities)}",
         )
     else:
-        report.ok("every entity has activity")
+        report.ok("every active entity has activity")
 
     by_entity = defaultdict(list)
     for account in accounts.values():
         by_entity[account.entity_code].append(account.bank_code)
-    idle_accounts = sorted(k for k, v in by_entity.items() if k not in active)
+    idle_accounts = sorted(k for k in by_entity if k not in active and k not in dormant)
     if idle_accounts:
         report.warn(
             BANK_SHEET,
