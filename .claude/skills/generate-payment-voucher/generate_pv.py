@@ -110,6 +110,17 @@ def validate(entity_code: str, bank_code: str, doc_date: date, line_items: list[
         )
 
     account = accounts[key]
+    if account.is_placeholder:
+        # Independent of the currency restriction below, so it still holds once
+        # non-MYR support lands. WT is the live case: its bank is recorded as
+        # TBC and it is an alerts-only entity that issues no documents at all.
+        raise GenerationError(
+            f"bank code {account.bank_code!r} for {entity_code} is a "
+            "placeholder, not a confirmed account. A reference built on it "
+            "would be meaningless. Confirm the account in 09 Bank Accounts "
+            "first."
+        )
+
     if account.currency.upper() != SUPPORTED_CURRENCY:
         raise GenerationError(
             f"account {key} is denominated in {account.currency}, but this "

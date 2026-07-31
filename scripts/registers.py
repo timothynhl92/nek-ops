@@ -30,6 +30,11 @@ MIRROR_LAST_ROW = 100
 # mirror they would print as a literal "Co. Reg. No. N/A" in the letterhead.
 NULL_TOKENS = {"n/a", "na", "-", "--", "tbc", "[to confirm]"}
 
+# Bank codes that stand for "not yet known". They load (see _key), but they must
+# never reach a document: a reference like PV/WT/TBC/202609/001 is meaningless,
+# and the account behind it is by definition unconfirmed.
+PLACEHOLDER_BANK_CODES = {"TBC", "TBD", "TBA", "N/A", "NA", "-", "?", "XXX"}
+
 
 class RegisterError(RuntimeError):
     """Raised when the register is missing, malformed, or over-full."""
@@ -59,6 +64,11 @@ class BankAccount:
     def key(self) -> str:
         """The composite key the templates match on."""
         return f"{self.entity_code}|{self.bank_code}"
+
+    @property
+    def is_placeholder(self) -> bool:
+        """True when the bank code is a stand-in rather than a real code."""
+        return self.bank_code.upper() in PLACEHOLDER_BANK_CODES
 
 
 def _key(value: object) -> str:
