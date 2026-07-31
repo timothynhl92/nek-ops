@@ -105,15 +105,20 @@ def counterparty_token(payee: str, vendor_index: dict[str, str] | None = None) -
     if not payee or not payee.strip():
         raise ReferenceError("payee is empty; cannot build a counterparty token")
 
+    source = payee
     if vendor_index:
         match = vendor_index.get(_normalise_for_match(payee))
         if match:
-            return _sanitise(match)
+            source = match
 
-    token = _sanitise(payee)
+    token = _sanitise(source)
     if not token:
+        # Both paths validate. A vendor code of, say, "---" would previously
+        # have been returned as an empty token, producing a filename with an
+        # empty counterparty field that traces back to nothing.
         raise ReferenceError(
-            f"payee {payee!r} contains no usable characters for a filename"
+            f"{'vendor code' if source is not payee else 'payee'} {source!r} "
+            "contains no usable characters for a filename"
         )
     return token
 

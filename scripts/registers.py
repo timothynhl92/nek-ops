@@ -111,6 +111,14 @@ def load_registers(register_path: str | Path) -> tuple[dict[str, Entity], dict[s
             code = _key(row[0] if row else None)
             if not code:
                 continue
+            if code in entities:
+                # Bank keys were already checked; entities were not, so a
+                # duplicated code silently overwrote the earlier row and every
+                # document for that entity would use whichever won.
+                raise RegisterError(
+                    f"duplicate entity code {code!r} in {ENTITY_SHEET}; "
+                    "the entity code is the master key and must be unique"
+                )
             entities[code] = Entity(
                 code=code,
                 legal_name=_clean(row[1]),

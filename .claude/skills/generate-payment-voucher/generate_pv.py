@@ -87,10 +87,15 @@ def parse_line(spec: str) -> LineItem:
     )
 
 
-def validate(entity_code: str, bank_code: str, doc_date: date, line_items: list[LineItem]):
+def validate(
+    entity_code: str,
+    bank_code: str,
+    doc_date: date,
+    line_items: list[LineItem],
+    entities: dict,
+    accounts: dict,
+):
     """Every check that can fail runs before Excel is launched."""
-    entities, accounts = load_registers(REGISTER)
-
     entity_code = entity_code.upper()
     bank_code = bank_code.upper()
 
@@ -139,7 +144,13 @@ def generate(args: argparse.Namespace) -> Path:
     doc_date = datetime.strptime(args.date, "%Y-%m-%d").date()
     line_items = [parse_line(spec) for spec in args.line]
 
-    entity, account = validate(args.entity, args.bank, doc_date, line_items)
+    # Read the register exactly once. Loading it again for the mirror sync
+    # would let the file change in between, so a voucher could be validated
+    # against one version and built from another.
+    entities, accounts = load_registers(REGISTER)
+    entity, account = validate(
+        args.entity, args.bank, doc_date, line_items, entities, accounts
+    )
 
     total = sum((item.amount for item in line_items), Decimal("0"))
     words = words_for_cell(total, account.currency)
@@ -164,8 +175,6 @@ def generate(args: argparse.Namespace) -> Path:
     print(f"  in words    {words}")
     print(f"  counterpty  {token}")
     print(f"  output      {destination.relative_to(REPO_ROOT)}")
-
-    entities, accounts = load_registers(REGISTER)
 
     with tempfile.TemporaryDirectory(prefix="nek-pv-") as tmp:
         working = Path(tmp) / "working.xlsx"
