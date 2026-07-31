@@ -61,8 +61,22 @@ class BankAccount:
         return f"{self.entity_code}|{self.bank_code}"
 
 
+def _key(value: object) -> str:
+    """Normalise a *key* cell: trim only, never blank.
+
+    Key fields must not go through :func:`_clean`. WT's bank code is literally
+    ``TBC``, which is also a null token -- blanking it silently deleted the
+    whole account from the register as the generation layer saw it. A row that
+    quietly does not exist is far worse than a row that fails a later check.
+    """
+    return "" if value is None else str(value).strip()
+
+
 def _clean(value: object) -> str:
-    """Normalise a register cell to a trimmed string, blanking null tokens."""
+    """Normalise a *descriptive* cell, blanking placeholder tokens.
+
+    Only for fields that are printed or ignored -- never for keys.
+    """
     if value is None:
         return ""
     text = str(value).strip()
@@ -84,7 +98,7 @@ def load_registers(register_path: str | Path) -> tuple[dict[str, Entity], dict[s
         entities: dict[str, Entity] = {}
         ws = wb[ENTITY_SHEET]
         for row in ws.iter_rows(min_row=HEADER_ROW + 1, values_only=True):
-            code = _clean(row[0] if row else None)
+            code = _key(row[0] if row else None)
             if not code:
                 continue
             entities[code] = Entity(
@@ -100,8 +114,8 @@ def load_registers(register_path: str | Path) -> tuple[dict[str, Entity], dict[s
         accounts: dict[str, BankAccount] = {}
         ws = wb[BANK_SHEET]
         for row in ws.iter_rows(min_row=HEADER_ROW + 1, values_only=True):
-            bank_code = _clean(row[0] if row else None)
-            entity_code = _clean(row[1]) if row and len(row) > 1 else ""
+            bank_code = _key(row[0] if row else None)
+            entity_code = _key(row[1]) if row and len(row) > 1 else ""
             if not bank_code or not entity_code:
                 continue
             account = BankAccount(
