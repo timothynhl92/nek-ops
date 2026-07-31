@@ -62,6 +62,20 @@ def open_workbook(app, path: Path, read_only: bool = False) -> Iterator["win32co
     # Excel's COM API resolves relative paths against its own working
     # directory, not ours, so an absolute path is mandatory here.
     wb = app.Workbooks.Open(str(path), UpdateLinks=0, ReadOnly=read_only)
+
+    # If the file is already open elsewhere, Excel hands back a read-only copy
+    # instead of refusing. With DisplayAlerts off, a later Save() is then a
+    # silent no-op: the run reports success and nothing reaches disk. Fail here
+    # instead, while the cause is still obvious.
+    if not read_only and wb.ReadOnly:
+        with contextlib.suppress(Exception):
+            wb.Close(SaveChanges=False)
+        raise RecalcError(
+            f"{path.name} opened read-only, so changes could not be saved. "
+            "It is almost certainly open in another Excel window -- close it "
+            "and run again."
+        )
+
     # Excel rejects the Calculation property until a workbook exists, and a
     # template saved in manual mode would otherwise silently skip recalc.
     with contextlib.suppress(Exception):
