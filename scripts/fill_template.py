@@ -4,9 +4,11 @@ Cell addresses were read from the template rather than assumed; see the map in
 :data:`PV_ANCHORS`. The script writes *only* these cells. Everything else on the
 sheet -- letterhead, reference, total -- is a formula and stays untouched (§7).
 
-Deliberately not written: **F23 (RECEIVED BY)**. It is yellow, but it is a
-wet-signature field the payee signs on receipt, so it is correctly outside the
-input contract in §8. Its blankness is the expected state and is never an error.
+Deliberately not written: the **signature rules** at F23:H23, F25:H25 and
+F27:H27. Each sits beside a signatory's initials and is signed by hand once the
+voucher is printed, so its blankness is the expected state and never an error.
+(The former RECEIVED BY field was removed on 2026-07-31 at the operator's
+request; the payee no longer countersigns the voucher.)
 """
 
 from __future__ import annotations
@@ -32,12 +34,15 @@ PV_ANCHORS = {
     "pay_to": "B7",
     "mode_of_payment": "H8",
     "doc_date": "H9",
-    "amount_in_words": "B20",
+    # A20:B20 carries the currency label; the words sit in the box beside it.
+    "amount_in_words": "C20",
     "prepared_by": "B23",
     "issued_by": "B25",
     "approved_by": "B27",
 }
-RECEIVED_BY = "F23"  # intentionally never written
+# Each signatory has a blank rule at F:H on their row, signed by hand after
+# printing. Never written to. RECEIVED BY was removed on 2026-07-31.
+SIGNATURE_RULES = ("F23:H23", "F25:H25", "F27:H27")
 
 # Line-item grid: six rows, description / amount / account code.
 LINE_FIRST_ROW = 12
@@ -62,7 +67,7 @@ PAYMENT_MODES = ("IBG", "Cheque", "TT")
 # widths (A13 + B22 + C8 + D13 = 56 for the description band; B..H = 92 for the
 # words band). Used only to pick a row height -- see :func:`_fit_row`.
 WIDTH_DESCRIPTION = 56
-WIDTH_WORDS = 92
+WIDTH_WORDS = 70  # C..H, after the label took A:B
 LINE_HEIGHT = 13.5
 MIN_ROW_HEIGHT = 15.0
 
