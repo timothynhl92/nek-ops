@@ -70,6 +70,9 @@ SHEET_NAME = "Payment Voucher"
 # the same three as a dropdown, so a human filling it by hand and a script
 # filling it cannot produce different vocabularies.
 PAYMENT_MODES = ("IBG", "Cheque", "TT")
+# Roughly 99% of payments go out by IBG, so it is the default rather than a
+# field the operator retypes every time.
+DEFAULT_PAYMENT_MODE = "IBG"
 
 # Approximate characters per line in the merged bands, derived from the column
 # widths (A13 + B22 + C8 + D13 = 56 for the description band; B..H = 92 for the

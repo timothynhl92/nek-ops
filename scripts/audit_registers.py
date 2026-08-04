@@ -18,6 +18,7 @@ Exit code 0 = no errors (warnings may still be printed), 1 = errors found.
 
 from __future__ import annotations
 
+import re
 import sys
 from collections import Counter, defaultdict
 from pathlib import Path
@@ -254,6 +255,45 @@ def check_orphans(wb, entities, accounts, report: Report) -> None:
         report.ok("every bank account belongs to an active entity")
 
 
+def check_completeness(wb, report: Report) -> None:
+    """Which register fields are still placeholders.
+
+    Not errors -- the pipeline runs fine without them -- but they are what
+    someone has to fill in, so listing them answers "does this file need
+    maintaining?" with a specific answer instead of a vague yes.
+    """
+    report.section("Outstanding register data")
+    placeholder = re.compile(r"^\s*(\[.*\]|tbc|to confirm|n/?a|-{1,2}|\?)\s*$", re.I)
+
+    sheets = {
+        ENTITY_SHEET: "entity",
+        PROPERTY_SHEET: "property",
+        VENDOR_SHEET: "vendor",
+        BANK_SHEET: "bank account",
+    }
+    clean = True
+    for sheet, noun in sheets.items():
+        ws = wb[sheet]
+        gaps: Counter = Counter()
+        headers = {
+            col: str(ws.cell(row=HEADER_ROW, column=col).value or f"col{col}")
+            for col in range(1, ws.max_column + 1)
+        }
+        for row in range(HEADER_ROW + 1, ws.max_row + 1):
+            if not str(ws.cell(row=row, column=1).value or "").strip():
+                continue
+            for col, header in headers.items():
+                value = ws.cell(row=row, column=col).value
+                if value is not None and placeholder.match(str(value)):
+                    gaps[header] += 1
+        if gaps:
+            clean = False
+            top = ", ".join(f"{h} x{n}" for h, n in gaps.most_common(4))
+            report.note(f"{noun}: {sum(gaps.values())} placeholder(s) -- {top}")
+    if clean:
+        report.ok("no placeholder values anywhere")
+
+
 def check_doc_types(wb, report: Report) -> None:
     report.section("Document type codes")
     listed = {str(v).strip() for _, v in _column(wb[CODE_SHEET], 1)}
@@ -303,6 +343,7 @@ def main() -> int:
     check_doc_types(wb, report)
     check_mirror_capacity(entities, accounts, report)
     check_orphans(wb, entities, accounts, report)
+    check_completeness(wb, report)
 
     print("\n" + "=" * 70)
     for warning in report.warnings:

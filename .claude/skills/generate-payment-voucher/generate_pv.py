@@ -37,6 +37,7 @@ from fill_template import (  # noqa: E402
     CP_GUARD,
     DEFAULT_CHECKED_BY,
     DEFAULT_ISSUED_BY,
+    DEFAULT_PAYMENT_MODE,
     PAYMENT_MODES,
     PRINTED_REFERENCE,
     SHEET_NAME,
@@ -297,9 +298,9 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument(
         "--mode",
         dest="mode_of_payment",
-        required=True,
+        default=DEFAULT_PAYMENT_MODE,
         choices=PAYMENT_MODES,
-        help="mode of payment",
+        help=f"mode of payment (default {DEFAULT_PAYMENT_MODE})",
     )
     p.add_argument(
         "--line",

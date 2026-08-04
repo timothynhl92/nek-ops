@@ -38,7 +38,7 @@ a tenant-facing receipt (`OR`), or for an invoice (`INV`).
 | `--bank` | yes | Bank code, e.g. `BOC`. Must be linked to the entity in `09 Bank Accounts`, else the run fails. |
 | `--date` | yes | Document date, `YYYY-MM-DD`. Must be on or after the 2026-09 cutover. |
 | `--pay-to` | yes | Payee name. |
-| `--mode` | yes | Mode of payment — `IBG`, `Cheque` or `TT`. The template carries the same three as a dropdown. |
+| `--mode` | no | Mode of payment — `IBG`, `Cheque` or `TT`. Defaults to `IBG`, which is how nearly all payments go out. The template carries the same three as a dropdown. |
 | `--line` | yes | Repeatable, `description\|amount[\|account_code]`. One to six. |
 | `--issued-by` | no | Issuer's initials. Defaults to `KN` (Kelvin Ng). |
 | `--checked-by` | no | Checker's initials. Defaults to `OHY` (Ong Hooi Yong). |
@@ -110,10 +110,11 @@ picks it up automatically; no template edit is needed.
 ```bash
 python .claude/skills/generate-payment-voucher/generate_pv.py \
   --entity NEK --bank BOC --date 2026-09-01 \
-  --pay-to "Kumpulan Wang Simpanan Pekerja" --mode IBG \
+  --pay-to "Kumpulan Wang Simpanan Pekerja" \
   --line "EPF Payable - Aug 2026|2793.00|5100-01" \
   --approved-by NCL
 ```
 
-`--issued-by` and `--checked-by` are omitted above, so they fall back to `KN`
-and `OHY`. Pass them explicitly when someone else issues or checks.
+Only the approver is stated. `--mode`, `--issued-by` and `--checked-by` fall
+back to `IBG`, `KN` and `OHY`, which covers the ordinary case; pass them
+explicitly when a run differs.
