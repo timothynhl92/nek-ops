@@ -27,8 +27,13 @@ TENS = (
 SCALES = ((10**9, "Billion"), (10**6, "Million"), (1000, "Thousand"), (100, "Hundred"))
 
 # currency code -> (major unit name, minor unit name)
+#
+# The minor unit is "Cents" for every currency, including MYR. Operator
+# decision 2026-07-31, agreed with KCK: the documents are written in English
+# throughout, and one minor-unit word across all currencies removes a needless
+# per-currency difference from both the wording and the reader's eye.
 CURRENCIES = {
-    "MYR": ("Ringgit Malaysia", "Sen"),
+    "MYR": ("Ringgit Malaysia", "Cents"),
     "HKD": ("Hong Kong Dollars", "Cents"),
     "USD": ("US Dollars", "Cents"),
 }
@@ -46,7 +51,10 @@ def _under_thousand(n: int) -> str:
         return TENS[tens] + (f"-{UNITS[rest]}" if rest else "")
     hundreds, rest = divmod(n, 100)
     out = f"{UNITS[hundreds]} Hundred"
-    return f"{out} And {_under_thousand(rest)}" if rest else out
+    # No "And" before the tens. With one present, an amount carrying cents read
+    # "... Four Hundred And Twenty And Cents Seventy-Five Only" -- two "And"s
+    # colliding on a document someone signs. Operator decision 2026-07-31.
+    return f"{out} {_under_thousand(rest)}" if rest else out
 
 
 def integer_to_words(n: int) -> str:
@@ -62,8 +70,7 @@ def integer_to_words(n: int) -> str:
             count, n = divmod(n, value)
             parts.append(f"{_under_thousand(count) if value < 1000 else integer_to_words(count)} {name}")
     if n:
-        # "And" before a trailing sub-hundred remainder reads as it is spoken.
-        parts.append(("And " if parts and n < 100 else "") + _under_thousand(n))
+        parts.append(_under_thousand(n))
     return " ".join(parts)
 
 
@@ -104,5 +111,6 @@ def _require_known(currency: str) -> None:
 
 
 if __name__ == "__main__":
-    for sample in ("2793.00", "2793.50", "1000000", "0.05", "115.00", "21.00"):
+    for sample in ("2793.00", "2793.50", "1000000", "0.05", "115.00", "21.00",
+                   "158420.75", "6167.54", "2202.50", "100.01"):
         print(f"{sample:>12}  MYR  {words_for_cell(sample, 'MYR')}")

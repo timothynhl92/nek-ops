@@ -30,6 +30,7 @@ from amount_in_words import CURRENCIES, words_for_cell  # noqa: E402
 from excel_engine import excel_app, export_worksheet, open_workbook  # noqa: E402
 from fill_template import (  # noqa: E402
     CP_GUARD,
+    PAYMENT_MODES,
     PRINTED_REFERENCE,
     SHEET_NAME,
     TOTAL_CELL,
@@ -194,7 +195,7 @@ def generate(args: argparse.Namespace) -> Path:
                 sequence=sequence,
                 doc_date=doc_date,
                 pay_to=args.pay_to,
-                tt_cheque=args.tt_cheque,
+                mode_of_payment=args.mode_of_payment,
                 line_items=line_items,
                 amount_words=words,
                 prepared_by=args.prepared_by,
@@ -247,7 +248,13 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--bank", required=True, help="bank code, e.g. BOC")
     p.add_argument("--date", required=True, help="document date, YYYY-MM-DD")
     p.add_argument("--pay-to", required=True, help="payee name")
-    p.add_argument("--tt-cheque", required=True, help="payment method, e.g. IBG")
+    p.add_argument(
+        "--mode",
+        dest="mode_of_payment",
+        required=True,
+        choices=PAYMENT_MODES,
+        help="mode of payment",
+    )
     p.add_argument(
         "--line",
         action="append",

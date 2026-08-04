@@ -38,7 +38,7 @@ a tenant-facing receipt (`OR`), or for an invoice (`INV`).
 | `--bank` | yes | Bank code, e.g. `BOC`. Must be linked to the entity in `09 Bank Accounts`, else the run fails. |
 | `--date` | yes | Document date, `YYYY-MM-DD`. Must be on or after the 2026-09 cutover. |
 | `--pay-to` | yes | Payee name. |
-| `--tt-cheque` | yes | Payment method, e.g. `IBG`. |
+| `--mode` | yes | Mode of payment — `IBG`, `Cheque` or `TT`. The template carries the same three as a dropdown. |
 | `--line` | yes | Repeatable, `description\|amount[\|account_code]`. One to six. |
 | `--prepared-by` / `--issued-by` / `--approved-by` | yes | Signatory initials. |
 | `--keep-xlsx` | no | Also save the filled workbook for the audit trail. |
@@ -96,7 +96,7 @@ picks it up automatically; no template edit is needed.
 ```bash
 python .claude/skills/generate-payment-voucher/generate_pv.py \
   --entity NEK --bank BOC --date 2026-09-01 \
-  --pay-to "Kumpulan Wang Simpanan Pekerja" --tt-cheque IBG \
+  --pay-to "Kumpulan Wang Simpanan Pekerja" --mode IBG \
   --line "EPF Payable - Aug 2026|2793.00|5100-01" \
   --prepared-by TN --issued-by KY --approved-by NCL
 ```

@@ -30,7 +30,7 @@ CP_GUARD = "K8"         # derived
 # Document body
 PV_ANCHORS = {
     "pay_to": "B7",
-    "tt_cheque": "H8",
+    "mode_of_payment": "H8",
     "doc_date": "H9",
     "amount_in_words": "B20",
     "prepared_by": "B23",
@@ -53,6 +53,19 @@ TOTAL_CELL = "E18"
 
 SHEET_NAME = "Payment Voucher"
 
+# The only accepted answers for "Mode of Payment :" (H8). The template carries
+# the same three as a dropdown, so a human filling it by hand and a script
+# filling it cannot produce different vocabularies.
+PAYMENT_MODES = ("IBG", "Cheque", "TT")
+
+# Approximate characters per line in the merged bands, derived from the column
+# widths (A13 + B22 + C8 + D13 = 56 for the description band; B..H = 92 for the
+# words band). Used only to pick a row height -- see :func:`_fit_row`.
+WIDTH_DESCRIPTION = 56
+WIDTH_WORDS = 92
+LINE_HEIGHT = 13.5
+MIN_ROW_HEIGHT = 15.0
+
 
 class FillError(ValueError):
     """Raised when the inputs cannot be written to the template safely."""
@@ -63,6 +76,19 @@ class LineItem:
     description: str
     amount: Decimal
     account_code: str = ""
+
+
+def _fit_row(ws, row: int, text: str, width_chars: int) -> None:
+    """Grow a row so wrapped text in a merged cell is not clipped.
+
+    Excel auto-fits row height for wrapped text only in *unmerged* cells. Every
+    text band on this voucher is merged, so a long payee or description wrapped
+    to a second line and then had that line cut off by the fixed row height --
+    which is what made long entries look distorted and made the table's ruling
+    appear to stop partway down the page.
+    """
+    lines = max(1, -(-len(str(text)) // width_chars))  # ceiling division
+    ws.Rows(row).RowHeight = max(MIN_ROW_HEIGHT, lines * LINE_HEIGHT + 2)
 
 
 def excel_serial(value: date) -> float:
@@ -108,7 +134,7 @@ def fill_payment_voucher(
     sequence: int,
     doc_date: date,
     pay_to: str,
-    tt_cheque: str,
+    mode_of_payment: str,
     line_items: list[LineItem],
     amount_words: str,
     prepared_by: str,
@@ -117,15 +143,22 @@ def fill_payment_voucher(
 ) -> None:
     """Write every input cell of an open Payment Voucher worksheet."""
     validate_line_items(line_items)
+    if mode_of_payment not in PAYMENT_MODES:
+        raise FillError(
+            f"mode of payment {mode_of_payment!r} is not one of "
+            f"{', '.join(PAYMENT_MODES)}"
+        )
 
     ws.Range(CP_ENTITY).Value = entity_code.upper()
     ws.Range(CP_BANK).Value = bank_code.upper()
     ws.Range(CP_RUNNING_NO).Value = sequence
 
     ws.Range(PV_ANCHORS["pay_to"]).Value = pay_to
-    ws.Range(PV_ANCHORS["tt_cheque"]).Value = tt_cheque
+    _fit_row(ws, 7, pay_to, WIDTH_DESCRIPTION)
+    ws.Range(PV_ANCHORS["mode_of_payment"]).Value = mode_of_payment
     ws.Range(PV_ANCHORS["doc_date"]).Value = excel_serial(doc_date)
     ws.Range(PV_ANCHORS["amount_in_words"]).Value = amount_words
+    _fit_row(ws, 20, amount_words, WIDTH_WORDS)
     ws.Range(PV_ANCHORS["prepared_by"]).Value = prepared_by
     ws.Range(PV_ANCHORS["issued_by"]).Value = issued_by
     ws.Range(PV_ANCHORS["approved_by"]).Value = approved_by
@@ -138,9 +171,13 @@ def fill_payment_voucher(
         ws.Cells(LINE_LAST_ROW, LINE_GRID_LAST_COL),
     ).ClearContents()
 
+    for row in range(LINE_FIRST_ROW, LINE_LAST_ROW + 1):
+        ws.Rows(row).RowHeight = MIN_ROW_HEIGHT
+
     for offset, item in enumerate(line_items):
         row = LINE_FIRST_ROW + offset
         ws.Cells(row, LINE_DESCRIPTION_COL).Value = item.description
+        _fit_row(ws, row, item.description, WIDTH_DESCRIPTION)
         ws.Cells(row, LINE_AMOUNT_COL).Value = float(item.amount)
         if item.account_code:
             ws.Cells(row, LINE_ACCOUNT_COL).Value = item.account_code
