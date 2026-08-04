@@ -56,7 +56,12 @@ from ref_and_filename import (  # noqa: E402
     counterparty_token,
     load_vendor_index,
 )
-from registers import load_registers, sync_currency, sync_mirrors  # noqa: E402
+from registers import (  # noqa: E402
+    load_properties,
+    load_registers,
+    sync_currency,
+    sync_mirrors,
+)
 
 TEMPLATE = REPO_ROOT / "templates" / "NEK_Document_Templates.xlsx"
 REGISTER = REPO_ROOT / "registers" / "NEK_Master_Registers.xlsx"
@@ -67,6 +72,7 @@ DRYRUN_DIR = REPO_ROOT / "output" / "dryrun"
 # the top margin. Worth revisiting when the live counter is wired: at that point
 # a draft and an issued voucher become indistinguishable once printed.
 DRAFT_PREFIX = "DRAFT_"
+PROPERTY_SHEET_NAME = "02 Property & Lease"
 
 SUPPORTED_CURRENCIES = set(CURRENCIES)
 
@@ -193,7 +199,7 @@ def generate(args: argparse.Namespace, vt: VoucherType) -> Path:
         vt.doctype, entity.code, account.bank_code, doc_date, sequence
     )
 
-    token = counterparty_token(args.counterparty, load_vendor_index(REGISTER))
+    token = _counterparty_token(args, entity)
     filename = build_filename(
         doc_date, entity.code, vt.doctype, token, reference, "pdf", prefix=DRAFT_PREFIX
     )
@@ -254,6 +260,44 @@ def generate(args: argparse.Namespace, vt: VoucherType) -> Path:
 
     _check_paper(destination)
     return destination
+
+
+def _counterparty_token(args: argparse.Namespace, entity) -> str:
+    """The filename's counterparty field.
+
+    ``--unit`` files a rental document under the unit rather than the tenant.
+    That keeps a private individual's name out of every filename and matches
+    how rental income is actually reviewed -- by unit, not by occupant. The
+    tenant's name still appears on the document itself.
+    """
+    if not args.unit:
+        return counterparty_token(args.counterparty, load_vendor_index(REGISTER))
+
+    properties = load_properties(REGISTER)
+    key = "".join(ch for ch in args.unit.upper() if ch.isalnum())
+    prop = properties.get(key)
+    if prop is None:
+        known = sorted({p.unit or p.code for p in properties.values()})
+        raise GenerationError(
+            f"unit {args.unit!r} is not in the property register. "
+            f"Known: {', '.join(known)}"
+        )
+    if prop.entity_code and prop.entity_code != entity.code:
+        raise GenerationError(
+            f"unit {prop.unit or prop.code!r} belongs to {prop.entity_code}, "
+            f"not {entity.code}. Filing it under the wrong entity would put the "
+            "document beyond reach of that entity's records."
+        )
+
+    token = counterparty_token(prop.unit or prop.code)
+    if token.isdigit():
+        raise GenerationError(
+            f"unit {prop.unit!r} would give the filename token {token!r}, which "
+            "identifies nothing on its own. Give this unit a distinctive code "
+            f"in {PROPERTY_SHEET_NAME} (the Penang units use forms like "
+            "'1G-11-03') before filing documents under it."
+        )
+    return token
 
 
 def _verify(ws, reference: str, total: Decimal) -> None:
@@ -339,6 +383,13 @@ def build_parser(vt: VoucherType, description: str) -> argparse.ArgumentParser:
         "--approved-by",
         required=True,
         help="initials of the approver -- no default, approval is deliberate",
+    )
+    p.add_argument(
+        "--unit",
+        default=None,
+        help="property code or unit, e.g. 1G-11-03. When given, the FILENAME is "
+        "filed under the unit instead of the counterparty name; the document "
+        "itself is unchanged. Use for rental documents.",
     )
     p.add_argument("--keep-xlsx", action="store_true", help="save the filled workbook too")
     p.add_argument(

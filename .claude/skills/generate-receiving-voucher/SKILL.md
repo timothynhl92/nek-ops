@@ -43,7 +43,8 @@ tenant-facing receipt (`OR`), or for an invoice (`INV`).
 | `--entity` | yes | Entity code, e.g. `HHIL`. Must exist in `01 Entity`. |
 | `--bank` | yes | Bank code, e.g. `BOC`. The account the money was received **into**. Must be linked to the entity, else the run fails. |
 | `--date` | yes | Document date, `YYYY-MM-DD`. On or after the 2026-09 cutover. |
-| `--received-from` | yes | Payer's name. |
+| `--received-from` | yes | Payer's name. Appears on the document. |
+| `--unit` | no | Property code or unit, e.g. `1G-11-03`. Files the **filename** under the unit instead of the payer. **Use for every rental receipt.** |
 | `--mode` | no | How the money arrived — `IBG`, `Cheque` or `TT`. Defaults to `IBG`. |
 | `--line` | yes | Repeatable, `description\|amount[\|account_code]`. One to six. |
 | `--issued-by` | no | Defaults to `KN` (Kelvin Ng). |
@@ -71,16 +72,28 @@ sequence, independent of `PV`.
 ```bash
 python .claude/skills/generate-receiving-voucher/generate_rv.py \
   --entity HHIL --bank BOC --date 2026-09-01 \
-  --received-from "Yan Zhou" \
+  --received-from "Yan Zhou" --unit "1G-11-03" \
   --line "Rental 1G-11-03 - Sep 2026|10000.00|4100-01" \
   --approved-by NCL
 ```
 
-## Note on the counterparty token
+→ `DRAFT_2026-09-01_HHIL_RV_1G-11-03_RV-HHIL-BOC-202609-001.pdf`
 
-Payers are usually **tenants**, who are not in `05 Vendor`. The filename token
-therefore falls back to the sanitised name (`Yan Zhou` → `YAN-ZHOU`). That is
-correct today, but §9 records an open decision on whether rental documents
-should be filed under the **property code** instead — which would also keep
-tenants' names out of filenames. Resolve that before `OR`/`INV` are built, and
-this skill should follow whatever is decided.
+## Filing rental receipts under the unit
+
+**Rental receipts are filed by unit, not by tenant** (operator decision,
+2026-07-31). The tenant's name still appears on the document under
+`RECEIVED FROM :`; only the filename changes. Two reasons: rental income is
+reviewed by unit, and it keeps a private individual's name out of every
+filename.
+
+`--unit` accepts either the property code or the unit and is validated against
+`02 Property & Lease`. It fails if the unit is unknown, if it belongs to a
+different entity, or if it would produce a filename token that identifies
+nothing on its own.
+
+**The two Hong Kong units currently fail that last check.** They are recorded
+as units `27` and `28`, which say nothing in a filename. They need distinctive
+codes in the property register before HK rental documents can be filed by unit.
+Non-rental receipts (a supplier refund, say) simply omit `--unit` and file
+under the payer as usual.

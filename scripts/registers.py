@@ -17,6 +17,7 @@ from pathlib import Path
 from openpyxl import load_workbook
 
 ENTITY_SHEET = "01 Entity"
+PROPERTY_SHEET = "02 Property & Lease"
 BANK_SHEET = "09 Bank Accounts"
 HEADER_ROW = 4  # data starts on the row below
 
@@ -164,6 +165,53 @@ def load_registers(register_path: str | Path) -> tuple[dict[str, Entity], dict[s
     _assert_fits(len(entities), "entities")
     _assert_fits(len(accounts), "bank accounts")
     return entities, accounts
+
+
+@dataclass(frozen=True)
+class Property:
+    code: str
+    entity_code: str
+    address: str
+    unit: str
+    tenant: str
+
+
+def load_properties(register_path: str | Path) -> dict[str, Property]:
+    """Return ``{normalised_key: Property}`` for the lettable units.
+
+    Both the property code and the unit are indexed, so a caller can name
+    either. Used to validate ``--unit`` on rental documents: filing by unit
+    rather than by tenant keeps a private individual's name out of every
+    filename and matches how rental income is actually reviewed.
+    """
+    path = Path(register_path).resolve()
+    wb = load_workbook(path, data_only=True, read_only=True)
+    index: dict[str, Property] = {}
+    try:
+        if PROPERTY_SHEET not in wb.sheetnames:
+            return index
+        for row in wb[PROPERTY_SHEET].iter_rows(min_row=HEADER_ROW + 1, values_only=True):
+            code = _key(row[0] if row else None)
+            if not code:
+                continue
+            prop = Property(
+                code=code,
+                entity_code=_key(row[1]) if len(row) > 1 else "",
+                address=_clean(row[2]) if len(row) > 2 else "",
+                unit=_key(row[3]) if len(row) > 3 else "",
+                tenant=_clean(row[5]) if len(row) > 5 else "",
+            )
+            for alias in (prop.code, prop.unit):
+                if alias:
+                    index.setdefault(_normalise(alias), prop)
+    finally:
+        wb.close()
+    return index
+
+
+def _normalise(text: str) -> str:
+    """Letters and digits only, upper case -- for tolerant key matching."""
+    return "".join(ch for ch in str(text).upper() if ch.isalnum())
 
 
 def _assert_fits(count: int, what: str) -> None:
