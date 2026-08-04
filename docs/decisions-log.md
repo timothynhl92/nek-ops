@@ -32,6 +32,39 @@ afterwards.
 
 ---
 
+## 2026-07-31 — Rental documents are filed by unit, not by tenant
+
+`--unit` sets the filename's counterparty field to the unit or property code.
+The tenant's name still appears on the document under `RECEIVED FROM :`.
+
+**Why.** Rental income is reviewed by unit rather than by occupant, so the
+filing matches the use. It also keeps a private individual's name out of every
+filename, which matters more as the archive grows — and it sidesteps
+romanisation: the Sha Tin tenant's name is Chinese, and 吴 romanises as "Wu" in
+Mandarin but "Ng" in Cantonese. Guessing wrong would put a wrong name on a
+legal document.
+
+The unit is validated against `02 Property & Lease`. It fails on an unknown
+unit, on a unit belonging to a different entity (which would put the document
+beyond reach of that entity's records), and on one whose token identifies
+nothing.
+
+**Hong Kong property codes regularised** the same day: `Sha Tin` → `27-STRP`,
+`Victoria` → `28-VC`, following the Penang `<unit>-<property>` pattern. They
+were descriptions, not codes. The token is the **unit** where it stands alone
+(`1G-11-03`) and the **property code** otherwise (`27-STRP`), because the HK
+units are bare numbers.
+
+---
+
+## 2026-07-31 — Receiving Voucher wording
+
+`RECEIVED FM :` → `RECEIVED FROM :`, and the table header `IN PAYMENT FOR` →
+`BEING PAYMENT FOR`. The Payment Voucher keeps `IN PAYMENT FOR`, which is
+correct for money going out.
+
+---
+
 ## 2026-07-31 — Currency labels are formula-driven; MYR restriction lifted
 
 `E11` (currency code) and `A20` (amount-in-words label) on the Payment Voucher,

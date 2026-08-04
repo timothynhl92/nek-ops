@@ -82,8 +82,15 @@ def _key(value: object) -> str:
     ``TBC``, which is also a null token -- blanking it silently deleted the
     whole account from the register as the generation layer saw it. A row that
     quietly does not exist is far worse than a row that fails a later check.
+
+    Whole numbers are rendered without a decimal point: Excel hands back unit
+    "27" as the float ``27.0``, and ``"27.0"`` is not a key anyone typed.
     """
-    return "" if value is None else str(value).strip()
+    if value is None:
+        return ""
+    if isinstance(value, float) and value.is_integer():
+        return str(int(value))
+    return str(value).strip()
 
 
 def _clean(value: object) -> str:

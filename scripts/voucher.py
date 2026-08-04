@@ -289,13 +289,17 @@ def _counterparty_token(args: argparse.Namespace, entity) -> str:
             "document beyond reach of that entity's records."
         )
 
-    token = counterparty_token(prop.unit or prop.code)
-    if token.isdigit():
+    # Prefer the unit where it identifies the property on its own -- the Penang
+    # units are "1G-11-03" and read perfectly in a filename. The Hong Kong ones
+    # are bare numbers, so those fall back to the property code ("27-STRP").
+    source = prop.unit if any(ch.isalpha() for ch in prop.unit) else prop.code
+    token = counterparty_token(source)
+    if not any(ch.isalpha() for ch in token):
         raise GenerationError(
-            f"unit {prop.unit!r} would give the filename token {token!r}, which "
-            "identifies nothing on its own. Give this unit a distinctive code "
-            f"in {PROPERTY_SHEET_NAME} (the Penang units use forms like "
-            "'1G-11-03') before filing documents under it."
+            f"unit {prop.unit!r} and code {prop.code!r} both give a filename "
+            f"token of {token!r}, which identifies nothing on its own. Give "
+            f"this property a distinctive code in {PROPERTY_SHEET_NAME} "
+            "(the others use forms like '1G-11-03' and '27-STRP')."
         )
     return token
 

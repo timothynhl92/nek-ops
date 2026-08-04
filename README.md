@@ -116,6 +116,15 @@ Keep skills in `.claude/skills/` and **check them into the repo** so every futur
 
 "Receiving Voucher" is the internal record of money received. "Official Receipt" is the tenant-facing document. The two are never both called "receipt".
 
+The two vouchers carry the same body wording except where direction demands
+otherwise: the PV reads `PAY TO :` / `IN PAYMENT FOR`, the RV reads
+`RECEIVED FROM :` / `BEING PAYMENT FOR`. Their sheets are otherwise
+cell-for-cell identical, which is why one module drives both.
+
+**`INV` is the invoice we issue** (counterparty: customer / tenant). A supplier
+invoice we *receive* is `PINV`. `08 Code Lists` originally had these the other
+way round; the template settles it — the `Invoice` sheet reads `Billed To :`.
+
 ---
 
 ## 5. Reference number & filename rules (important, easy to get wrong)
@@ -150,6 +159,22 @@ Filename rules: underscores separate fields, hyphens join words *within* a field
 3. An empty result is an **error**, never a blank field.
 
 Vendor rows flagged as example data are excluded from the match.
+
+**Rental documents are filed by unit, not by tenant** (decided 2026-07-31).
+Pass `--unit`; the counterparty field becomes the unit or property code, while
+the tenant's name still appears on the document itself. Rental income is
+reviewed by unit rather than by occupant, and it keeps a private individual's
+name out of every filename.
+
+```
+2026-09-01_HHIL_RV_1G-11-03_RV-HHIL-BOC-202609-001.pdf
+```
+
+The unit is validated against `02 Property & Lease` — an unknown unit, a unit
+belonging to a different entity, or one whose token would identify nothing all
+fail the run. The token is the **unit** where the unit stands alone
+(`1G-11-03`), otherwise the **property code** (`27-STRP`), because the Hong
+Kong units are bare numbers.
 
 **The sequence counter (`counters/counters.json`)** must track the last-used `NNN` per `(doctype, entity, year)` and increment on each successful generation. Design the counter so it is the single authority — never derive the number by guessing, and guard against gaps and duplicates (auditors notice both).
 
@@ -311,7 +336,8 @@ not yet exist.
 - **HHIL identifiers:** capture both the Hong Kong Business Registration number (70597712, seen on the existing invoice) and the Malaysian SSM foreign-company number, clearly labelled.
 - ~~**HK property ownership:** reconcile whether the Sha Tin unit belongs to CSK or NCL.~~ **Resolved 2026-07-31:** standardised to **NCL** throughout. CSK remains in the entity register as a director of NCLCAP, marked `Dormant`, with no bank account of its own.
 - **Chart of accounts.** The `ACCOUNTS CODE` column is free text pending the accountant. `08 Code Lists` holds *document-type* codes and controlled vocabularies — it has no chart of accounts, so one needs a home (a new `10 Chart of Accounts` sheet is the natural fit).
-- **Sha Tin tenant name.** `02 Property & Lease` and `04 Recurring Payments` both record the tenant as "Chinese national" — a description, not a name. The real name is a Chinese one; it renders correctly in the document body but cannot form a filename token, so the counterparty field for HK rental documents needs a decision (romanised name, or the property code).
+- **Sha Tin tenant name.** `02 Property & Lease` and `04 Recurring Payments` both record the tenant as "Chinese national" — a description, not a name. The real name is a Chinese one, which renders correctly in the document body (verified) but cannot form a filename token. **The filename half is resolved** — rental documents file by unit (§5) — so what remains is simply recording the tenant's actual name in the register.
+- **Hong Kong units are stored as numbers.** `02 Property & Lease` holds units `27` and `28` as numeric cells, so Excel returns them as `27.0`. Handled in `registers._key()`, but the register would be tidier with them as text.
 - **Vendor detail.** 17 vendors are seeded from the recurring payments, but registration numbers, contacts and payment terms are blank rather than guessed. `scripts/audit_registers.py` lists exactly what is outstanding.
 - **Salary slip statutory figures** (EPF/SOCSO/EIS/PCB) must come from the actual payroll computation each month, never be re-keyed or defaulted.
 
@@ -356,13 +382,14 @@ The scaffold and the first skill are built. A session starting now should:
 
 **Immediately available, blocked on nothing:**
 
-- `generate-receiving-voucher` (§11 item 2). The Receiving Voucher sheet has
-  already received every layout fix the Payment Voucher did, and reuses all of
-  `scripts/`. Note it shares the counter gate below, so it will also be
-  dry-run-only until that is wired.
 - `monthly-closing-checklist` (§11 item 5). Generated purely from
   `04 Recurring Payments` — no document numbers, no counter, no dependency on
   the accountant. The one piece that would be usable this month.
+- `generate-official-receipt` / `generate-invoice` (§11 item 4). The
+  counterparty rule they were waiting on is now settled (§5, file by unit).
+  They need the outward-facing layout reviewed the way the vouchers were, and
+  the `Invoice` and `Official Receipt` sheets have had the letterhead, paper
+  and currency work but **not** the border, signatory or spacing passes.
 
 **Blocked, and on what:**
 
@@ -370,10 +397,11 @@ The scaffold and the first skill are built. A session starting now should:
   deliberate decision to start consuming real document numbers. Note that with
   the on-page draft watermark removed, a dry run and an issued voucher are
   indistinguishable once printed; decide how drafts are marked before wiring.
-- **Official Receipt / Invoice** — need the Sha Tin tenant name and the
-  counterparty rule for rental documents (§9).
+  Both vouchers are gated on this, so neither produces an issuable document
+  until it is done.
 - **Salary slips** — need the payroll figures, which §9 says must never be
-  defaulted or re-keyed.
+  defaulted or re-keyed. The `Salary Slip` sheet also still hard-codes MYR in
+  seventeen cells (deliberately — Malaysian payroll is MYR by law).
 
 **Do not** implement anything that executes, schedules or releases a payment.
 Show the plan before writing code.
