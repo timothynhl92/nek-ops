@@ -31,13 +31,16 @@ CP_GUARD = "K8"         # derived
 
 # Document body
 PV_ANCHORS = {
-    "pay_to": "B7",
-    "mode_of_payment": "H8",
-    "doc_date": "H9",
+    "pay_to": "B7",          # merged B7:D7
+    "mode_of_payment": "G8",  # merged G8:H8
+    "doc_date": "G9",         # merged G9:H9
     # A20:B20 carries the currency label; the words sit in the box beside it.
     "amount_in_words": "C20",
-    "prepared_by": "B23",
-    "issued_by": "B25",
+    # Renamed 2026-07-31: the voucher is issued, checked, then approved. The
+    # old "prepared by" role is now "issued by", and the old "issued by" is
+    # "checked by"; the cells are unchanged.
+    "issued_by": "B23",
+    "checked_by": "B25",
     "approved_by": "B27",
 }
 # Each signatory has a blank rule at F:H on their row, signed by hand after
@@ -53,8 +56,12 @@ LINE_ACCOUNT_COL = 7       # G (merged G:H)
 LINE_GRID_LAST_COL = 8     # H -- the grid spans A:H, three merged ranges per row
 MAX_LINE_ITEMS = LINE_LAST_ROW - LINE_FIRST_ROW + 1
 
-PRINTED_REFERENCE = "H7"
+PRINTED_REFERENCE = "G7"  # merged G7:H7
 TOTAL_CELL = "E18"
+
+# Default signatories, used unless a run overrides them.
+DEFAULT_ISSUED_BY = "KN"    # Kelvin Ng
+DEFAULT_CHECKED_BY = "OHY"  # Ong Hooi Yong
 
 SHEET_NAME = "Payment Voucher"
 
@@ -66,10 +73,12 @@ PAYMENT_MODES = ("IBG", "Cheque", "TT")
 # Approximate characters per line in the merged bands, derived from the column
 # widths (A13 + B22 + C8 + D13 = 56 for the description band; B..H = 92 for the
 # words band). Used only to pick a row height -- see :func:`_fit_row`.
-WIDTH_DESCRIPTION = 56
-WIDTH_WORDS = 70  # C..H, after the label took A:B
-LINE_HEIGHT = 13.5
-MIN_ROW_HEIGHT = 15.0
+# Recalibrated for the 12pt body font and the narrower payee band (B:D).
+WIDTH_DESCRIPTION = 46
+WIDTH_WORDS = 58   # C..H, after the label took A:B
+WIDTH_PAYEE = 36   # B:D, after column E was given to the reference labels
+LINE_HEIGHT = 16.0
+MIN_ROW_HEIGHT = 19.0
 
 
 class FillError(ValueError):
@@ -142,9 +151,9 @@ def fill_payment_voucher(
     mode_of_payment: str,
     line_items: list[LineItem],
     amount_words: str,
-    prepared_by: str,
-    issued_by: str,
     approved_by: str,
+    issued_by: str = DEFAULT_ISSUED_BY,
+    checked_by: str = DEFAULT_CHECKED_BY,
 ) -> None:
     """Write every input cell of an open Payment Voucher worksheet."""
     validate_line_items(line_items)
@@ -159,13 +168,13 @@ def fill_payment_voucher(
     ws.Range(CP_RUNNING_NO).Value = sequence
 
     ws.Range(PV_ANCHORS["pay_to"]).Value = pay_to
-    _fit_row(ws, 7, pay_to, WIDTH_DESCRIPTION)
+    _fit_row(ws, 7, pay_to, WIDTH_PAYEE)
     ws.Range(PV_ANCHORS["mode_of_payment"]).Value = mode_of_payment
     ws.Range(PV_ANCHORS["doc_date"]).Value = excel_serial(doc_date)
     ws.Range(PV_ANCHORS["amount_in_words"]).Value = amount_words
     _fit_row(ws, 20, amount_words, WIDTH_WORDS)
-    ws.Range(PV_ANCHORS["prepared_by"]).Value = prepared_by
     ws.Range(PV_ANCHORS["issued_by"]).Value = issued_by
+    ws.Range(PV_ANCHORS["checked_by"]).Value = checked_by
     ws.Range(PV_ANCHORS["approved_by"]).Value = approved_by
 
     # Clear the whole grid first so a shorter run cannot inherit stale rows.

@@ -30,6 +30,8 @@ from amount_in_words import CURRENCIES, words_for_cell  # noqa: E402
 from excel_engine import excel_app, export_worksheet, open_workbook  # noqa: E402
 from fill_template import (  # noqa: E402
     CP_GUARD,
+    DEFAULT_CHECKED_BY,
+    DEFAULT_ISSUED_BY,
     PAYMENT_MODES,
     PRINTED_REFERENCE,
     SHEET_NAME,
@@ -198,8 +200,8 @@ def generate(args: argparse.Namespace) -> Path:
                 mode_of_payment=args.mode_of_payment,
                 line_items=line_items,
                 amount_words=words,
-                prepared_by=args.prepared_by,
                 issued_by=args.issued_by,
+                checked_by=args.checked_by,
                 approved_by=args.approved_by,
             )
 
@@ -262,9 +264,21 @@ def build_parser() -> argparse.ArgumentParser:
         metavar="DESC|AMOUNT[|ACCT]",
         help="repeatable; up to six",
     )
-    p.add_argument("--prepared-by", required=True)
-    p.add_argument("--issued-by", required=True)
-    p.add_argument("--approved-by", required=True)
+    p.add_argument(
+        "--issued-by",
+        default=DEFAULT_ISSUED_BY,
+        help=f"initials of the issuer (default {DEFAULT_ISSUED_BY}, Kelvin Ng)",
+    )
+    p.add_argument(
+        "--checked-by",
+        default=DEFAULT_CHECKED_BY,
+        help=f"initials of the checker (default {DEFAULT_CHECKED_BY}, Ong Hooi Yong)",
+    )
+    p.add_argument(
+        "--approved-by",
+        required=True,
+        help="initials of the approver -- no default, approval is deliberate",
+    )
     p.add_argument("--keep-xlsx", action="store_true", help="save the filled workbook too")
     p.add_argument(
         "--live",

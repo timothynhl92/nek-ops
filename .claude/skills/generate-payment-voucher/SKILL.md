@@ -40,12 +40,16 @@ a tenant-facing receipt (`OR`), or for an invoice (`INV`).
 | `--pay-to` | yes | Payee name. |
 | `--mode` | yes | Mode of payment — `IBG`, `Cheque` or `TT`. The template carries the same three as a dropdown. |
 | `--line` | yes | Repeatable, `description\|amount[\|account_code]`. One to six. |
-| `--prepared-by` / `--issued-by` / `--approved-by` | yes | Signatory initials. |
+| `--issued-by` | no | Issuer's initials. Defaults to `KN` (Kelvin Ng). |
+| `--checked-by` | no | Checker's initials. Defaults to `OHY` (Ong Hooi Yong). |
+| `--approved-by` | **yes** | Approver's initials. **No default** — approval is a deliberate act, so it must be stated every time. |
 | `--keep-xlsx` | no | Also save the filled workbook for the audit trail. |
 
 The running number is **never** passed by hand — it comes from the counter (§5).
 
-`RECEIVED BY` (F23) is intentionally left blank: the payee signs it on receipt.
+The voucher is **issued**, then **checked**, then **approved**. Each signatory
+has a printed rule beside their initials, signed by hand after printing; the
+script never writes to those rules.
 
 ## Process
 
@@ -98,5 +102,8 @@ python .claude/skills/generate-payment-voucher/generate_pv.py \
   --entity NEK --bank BOC --date 2026-09-01 \
   --pay-to "Kumpulan Wang Simpanan Pekerja" --mode IBG \
   --line "EPF Payable - Aug 2026|2793.00|5100-01" \
-  --prepared-by TN --issued-by KY --approved-by NCL
+  --approved-by NCL
 ```
+
+`--issued-by` and `--checked-by` are omitted above, so they fall back to `KN`
+and `OHY`. Pass them explicitly when someone else issues or checks.
