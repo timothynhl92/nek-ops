@@ -7,7 +7,18 @@
 - `NEK_Master_Registers.xlsx` — the reference-data layer (single source of truth).
 - `NEK_Document_Templates.xlsx` — five standardized, entity-driven document templates.
 
-Nothing is automated yet. The next phase builds the **generation layer**: code that takes structured inputs, fills a template, and produces a correctly-named PDF.
+**Status now (2026-07-31).** The generation layer exists and works, in dry-run
+only. `generate-payment-voucher` produces a correctly-named, correctly-numbered
+PDF from structured inputs, but it **cannot issue a document**: it reads the
+next sequence number without consuming it, and `--live` fails by design.
+Wiring the counter is a separate, reviewed change that is waiting on the
+operator's confirmed starting numbers.
+
+Sections below have been corrected where the build diverged from the design.
+Every such change is dated and explained in `docs/decisions-log.md` — read that
+alongside this document, not instead of it. **Where this brief and the code
+disagree, the code is what runs; treat the disagreement as a bug in one of
+them and resolve it deliberately.**
 
 ---
 
@@ -42,27 +53,38 @@ nek-ops/
 ├── registers/
 │   └── NEK_Master_Registers.xlsx # SINGLE SOURCE OF TRUTH — do not fork
 ├── templates/
-│   └── NEK_Document_Templates.xlsx
+│   └── NEK_Document_Templates.xlsx  # 8 sheets: 5 documents + 3 lookup sheets
 ├── .claude/
 │   └── skills/                   # Skills, checked into the repo
-│       ├── generate-payment-voucher/
-│       │   ├── SKILL.md
-│       │   └── generate_pv.py
-│       └── ...
+│       └── generate-payment-voucher/
+│           ├── SKILL.md
+│           └── generate_pv.py
 ├── scripts/                      # shared, reusable Python
+│   ├── excel_engine.py           # Excel COM: recalculation + PDF export (see §7)
+│   ├── registers.py              # read the register; refresh the template mirrors
+│   ├── counters.py               # the sequence authority (see §5)
 │   ├── fill_template.py          # write inputs into a template's yellow anchor cells
-│   ├── recalc.py                 # LibreOffice recalculation (see §7)
-│   ├── export_pdf.py             # xlsx sheet -> single-page A4 PDF
 │   ├── ref_and_filename.py       # build reference string + safe filename
-│   └── amount_in_words.py        # number -> "Ringgit Malaysia ... only" / HKD variant
+│   ├── amount_in_words.py        # number -> words; also the currency wording table
+│   └── audit_registers.py        # standing consistency check over the register
 ├── counters/
 │   └── counters.json             # running sequence per doctype/entity/year
 ├── output/                       # generated PDFs  (git-ignored)
+│   └── dryrun/                   # watermark-free drafts, DRAFT_ prefixed
 └── docs/
     ├── house-style.md
     ├── naming-convention.md
-    └── decisions-log.md
+    ├── decisions-log.md          # dated record of every divergence from this brief
+    └── archive/                  # superseded artefacts, kept not deleted
 ```
+
+`templates/` also holds five single-sheet stubs (`Invoice Template.xlsx` and
+friends). They are **empty shells with no formulas** — never generate from
+them. The only live template is `NEK_Document_Templates.xlsx`.
+
+**Run `python scripts/audit_registers.py` after any hand-edit to the register.**
+It checks referential integrity, duplicate keys, filename safety of every
+vendor code, and lists which fields are still placeholders.
 
 Keep skills in `.claude/skills/` and **check them into the repo** so every future Claude Code session and every contributor inherits the conventions automatically. The repo, not any individual's laptop, is the home of the automation — this is the defence against the single-person "black box" risk.
 
@@ -73,12 +95,15 @@ Keep skills in `.claude/skills/` and **check them into the repo** so every futur
 | Item | Standard |
 |---|---|
 | Font | Arial throughout |
-| Currency label | `MYR` (never "RM"/"Ringgit Malaysia" as a label; "Ringgit Malaysia" only in the amount-in-words line) |
+| Currency label | `MYR` (never "RM"/"Ringgit Malaysia" as a label; "Ringgit Malaysia" only in the amount-in-words line). Both the code and the words label are **derived from the bank account's currency**, not typed |
+| Minor unit | `Cents` for every currency, MYR included — the documents are English throughout |
 | Amount format | Accounting, two decimals: `#,##0.00` |
 | Date format | `YYYY-MM-DD` everywhere |
 | Letterhead | Entity-driven: full legal name, `Co. Reg. No.`, office address, `Tel: 012-4820853`, `Email: nekgroup84@gmail.com` (no fax) |
-| Page setup | A4 portrait, fit to 1 page wide, print area = document body only, margins 0.5" sides / 0.6" top-bottom |
-| Footer | "Computer-generated" line on outward-facing + salary docs; Prepared/Issued/Approved/Received signatory block on internal vouchers |
+| Page setup | A4 portrait, fit to 1 page **wide only** (never fit-to-height — it scales the sheet down until hairline rules drop out in print), print area = document body only, margins 0.35" sides / 0.3" top-bottom |
+| Page usage | Vouchers occupy the **top half** of the A4 sheet, which is then guillotined in two. `scripts/fill_template.py` reports when content would overrun that half |
+| Footer | "Computer-generated" line on outward-facing + salary docs. Internal vouchers carry **no footer line** |
+| Signatories | Internal vouchers: **Issued / Checked / Approved**, each with an initials field and a printed rule signed by hand after printing. Issuer defaults to `KN`, checker to `OHY`; **the approver never defaults** |
 
 ### Document families
 - **Outward-facing:** Invoice (`INV`), Official Receipt (`OR`). Branded letterhead, no signatory block.
@@ -111,7 +136,27 @@ Example:  2026-07-25_NEK_PV_KWSP_PV-NEK-BOC-202607-014.pdf
 
 Filename rules: underscores separate fields, hyphens join words *within* a field, no spaces, no `/ \ & % # $ ( ) , ' "`, ISO date is the **document** date, total path < 200 characters.
 
-**The sequence counter (`counters/counters.json`)** must track the last-used `NNN` per `(doctype, entity, year)` and increment on each successful generation. The operator will supply the *current* sequence position for each doc type at cutover (we are mid-year, so counters do not start at 001). Design the counter so it is the single authority — never derive the number by guessing, and guard against gaps and duplicates (auditors notice both).
+**The COUNTERPARTY token** (fixed rule, in `scripts/ref_and_filename.py`):
+
+1. If the payee matches a **vendor code or vendor name** in `05 Vendor`, use
+   that vendor code. Codes are **mnemonic** (`KWSP`, `TNB`, `KCK-AUD`), never
+   sequential — `V-001` in a filename makes the document store unsearchable.
+2. Otherwise: ASCII-fold, `&` → `AND`, uppercase, non-alphanumerics → spaces,
+   collapse to single hyphens, truncate to 40 characters on a word boundary.
+3. An empty result is an **error**, never a blank field.
+
+Vendor rows flagged as example data are excluded from the match.
+
+**The sequence counter (`counters/counters.json`)** must track the last-used `NNN` per `(doctype, entity, year)` and increment on each successful generation. Design the counter so it is the single authority — never derive the number by guessing, and guard against gaps and duplicates (auditors notice both).
+
+> **Superseded 2026-07-31.** Clean break rather than continuing the old
+> numbering: every `(doctype, entity)` starts at **001 from the 2026-09
+> cutover**, and document dates before that month are **refused** — those
+> numbers belong to the previous manual sequence. `--init-from` remains for any
+> doctype/entity that later needs a different start.
+
+`counters/counters.json` **does not exist yet** and will not until live issuance
+is wired. Dry-run reads the next number without creating the file.
 
 ---
 
@@ -152,16 +197,57 @@ Filename rules: underscores separate fields, hyphens join words *within* a field
 
 **The templates are two-layer by design.** A small set of yellow **input cells** plus a **Control Panel** (columns J:K, outside the print area) hold everything variable. Everything else — letterhead, reference number, totals — is a formula. The script writes only to the input cells; it never touches the formatted layout.
 
-- **Control Panel cells** (per template): Entity Code, Bank Code, Running No., plus a Payroll Date on the Salary Slip. The letterhead and reference derive from these via `INDEX/MATCH` against the `_EntityData` / `_BankAccounts` lookup sheets.
-- **Bank–entity mismatch guard:** each template shows a warning if the chosen bank code is not linked to the entity. Replicate this check in the script and **fail** the run on mismatch.
+- **Control Panel cells** (per template): Entity Code (`K3`), Bank Code (`K4`), Running No. (`K5`), plus a Payroll Date on the Salary Slip. Derived below them: bank name (`K6`), reference (`K7`), mismatch guard (`K8`), currency (`K9`). The letterhead and reference derive from these via `INDEX/MATCH` against the `_EntityData` / `_BankAccounts` lookup sheets.
+- **Lookup ranges span rows 3:100.** They were originally `3:13` — exactly the number of rows present — so a 12th entity would have fallen outside every `INDEX/MATCH` and been swallowed by `IFERROR`, blanking the letterhead silently. Keep the headroom.
+- **Bank–entity mismatch guard:** each template shows a warning if the chosen bank code is not linked to the entity. The template's guard is display-only; the script performs its own check and **fails** the run, *before* the counter is touched.
 
-**openpyxl + LibreOffice recalculation.** openpyxl writes formulas as strings with no cached values — until recalculated, formula cells read back as `None`. After filling a template, run it through LibreOffice (`soffice`) to recalculate, then export to PDF. A green recalc proves formulas *evaluate*, not that they are *right*: spot-check a couple of values.
+**Recalculation and PDF export use Microsoft Excel over COM, not LibreOffice.**
+LibreOffice is not installed on the build machine and Microsoft 365 is, so
+`scripts/excel_engine.py` drives Excel directly. It recalculates with the
+engine the templates were authored against and exports PDF with exact fidelity
+to the print setup. openpyxl is still used for *reading*, since it writes
+formulas with no cached values — until recalculated, formula cells read back as
+`None`. A green recalc proves formulas *evaluate*, not that they are *right*:
+the generator re-checks the printed reference, the mismatch guard and the total
+against independently computed values before it exports anything. That check
+has caught two real defects that inspection did not.
 
-**Formula compatibility.** Stick to Excel-2007-era functions (`INDEX`, `MATCH`, `SUMIFS`, `IFERROR`, `TEXT`). Avoid `XLOOKUP`, `FILTER`, `UNIQUE`, `SORT`, `SEQUENCE` — LibreOffice cannot evaluate them reliably in this pipeline.
+**Four hazards, all handled in code — do not undo them:**
 
-**Amount-in-words** must be generated by the script (e.g. a `num2words`-style routine), not typed. Handle currency: MYR → "Ringgit Malaysia … only"; HKD → "Hong Kong Dollars … only" (relevant for NCL/CSK HK documents).
+1. **Never pass a `datetime` to a cell through COM.** pywin32 converts via the
+   local timezone, so midnight on the 1st arrives as the previous month under
+   a positive UTC offset — a correct-looking voucher carrying the wrong
+   reference. Use `fill_template.excel_serial()`.
+2. **Switch the printer before any `PageSetup` write or export.** Both
+   round-trip to the active printer's driver, and a WSD-port printer that is
+   asleep blocks indefinitely while Windows still reports it "Normal".
+3. **Excel silently substitutes US Letter for A4** on the Microsoft virtual
+   printers, while still reporting A4 to the application. Every run measures
+   the finished PDF and warns. Set "Microsoft Print to PDF" to A4 in Windows,
+   or pass `--printer` with a real A4 device.
+4. **`Borders(edge)` is unreliable on a *merged* range.** Use
+   `Range.BorderAround()`, or boxes silently lose edges.
 
-**Python dependencies:** `openpyxl`, `pandas`, a number-to-words library, and LibreOffice for recalc + PDF export.
+**Formula compatibility.** Stick to Excel-2007-era functions (`INDEX`, `MATCH`,
+`SUMIFS`, `IFERROR`, `TEXT`). Excel would evaluate `XLOOKUP`/`FILTER` happily,
+but keeping the restriction preserves the option of moving back to LibreOffice
+and costs nothing today.
+
+**Amount-in-words** is generated by `scripts/amount_in_words.py`, never typed.
+That module is also the **single source for currency wording**: it is written
+into the template's `_Currency` sheet on every run, so the label the template
+prints and the words the script writes cannot drift apart. Adding a currency is
+a one-line change there and needs no template edit.
+
+**Single-source enforcement.** Every run *overwrites* the template's
+`_EntityData`, `_BankAccounts` and `_Currency` sheets from the master register
+before filling anything. Master always wins, so the two cannot disagree at the
+moment a document is produced. **Never hand-edit those sheets** — edit the
+register.
+
+**Python dependencies:** `openpyxl`, `pywin32`. Amount-in-words is implemented
+in-repo rather than pulled from a library, so the deterministic layer adds no
+third-party dependency and no data leaves the machine (§1, Tier 1).
 
 ---
 
@@ -169,29 +255,45 @@ Filename rules: underscores separate fields, hyphens join words *within* a field
 
 Build this first; it establishes the pattern the other four templates reuse.
 
+**Built and working in dry-run.** See `.claude/skills/generate-payment-voucher/SKILL.md`
+for the live contract; this section records the design intent.
+
 **Inputs**
 - `entity_code` (e.g. `NEK`) — must exist in the Entity register.
 - `bank_code` (e.g. `BOC`) — must be linked to `entity_code` in the Bank Account register; else fail.
-- `date` (document date, `YYYY-MM-DD`).
+- `date` (document date, `YYYY-MM-DD`) — must be on or after the 2026-09 cutover.
 - `pay_to` (payee name).
-- `tt_cheque` (payment method, e.g. `IBG`).
-- `line_items`: list of `{description, amount, account_code}`.
-- `signatories`: `{prepared_by, issued_by, approved_by}` (initials).
+- `mode_of_payment` — `IBG`, `Cheque` or `TT`. **Defaults to `IBG`.**
+- `line_items`: list of `{description, amount, account_code}`, one to six.
+- `signatories`: `{issued_by, checked_by, approved_by}` (initials). Issuer
+  defaults to `KN`, checker to `OHY`. **The approver has no default and is
+  required** — an approval nobody chose is not an approval (§2).
 - Running number handled by the counter (see §5), not passed in by hand.
 
 **Process**
-1. Validate entity and (entity, bank) pair. Fail clearly on mismatch.
-2. Read + increment the counter for `(PV, entity, year)`; build the reference `PV/ENTITY/BANK/YYYYMM/NNN`.
-3. Open the Payment Voucher template; write inputs to the yellow anchor cells and set the Control Panel (entity, bank, running no.).
+1. Validate entity, then the (entity, bank) pair, then the currency, the line
+   items and the date. **Everything that can fail runs before the counter is
+   touched and before Excel is launched.**
+2. Read the counter for `(PV, entity, year)`; build the reference
+   `PV/ENTITY/BANK/YYYYMM/NNN`. *Dry-run reads without consuming.*
+3. Copy the template to a temp working file. In **one** Excel session: refresh
+   the mirror sheets from the register, write the yellow anchor cells, set the
+   Control Panel. (One session, not five — launching Excel costs ~50s.)
 4. Compute + write amount-in-words.
-5. Recalculate via LibreOffice; sanity-check the total against the sum of line items.
-6. Export the Payment Voucher sheet to a single-page A4 PDF.
-7. Build the safe filename (slashes → hyphens; naming convention) and save to `output/`.
+5. Recalculate, then verify: guard cell empty, printed reference matches, sheet
+   total equals the independently computed sum. Abort on any disagreement.
+6. Export the Payment Voucher sheet to a single-page PDF, top half of A4.
+7. Build the safe filename (slashes → hyphens; naming convention) and save.
 8. Optionally keep the filled `.xlsx` alongside the PDF for the audit trail.
 
-**Outputs:** a correctly-named PDF (and optional xlsx) in `output/`, plus the updated counter.
+**Outputs:** a correctly-named PDF (and optional xlsx). In dry-run these land in
+`output/dryrun/` with a `DRAFT_` prefix and the counter is untouched.
 
-**Edge cases to handle:** bank not linked to entity (fail); empty/zero/negative amount; multi-line vouchers; long payee names; non-MYR currency for HK entities; a counter file that doesn't yet exist (initialise from the operator-supplied starting number).
+**Edge cases handled:** bank not linked to entity; placeholder bank code (`TBC`);
+a currency with no wording defined; empty/zero/negative amount; more than six
+line items (hard error — silently dropping rows would understate the total);
+long payee names; a document date before the cutover; a counter file that does
+not yet exist.
 
 **`SKILL.md` structure:** YAML frontmatter (`name`, `description`, `allowed-tools`) + a clear "when to use", the input contract above, the step-by-step process, and the guardrail that this skill produces a *draft for approval* and never executes payment.
 
@@ -203,7 +305,10 @@ Build this first; it establishes the pattern the other four templates reuse.
 - **Reference sequence starting numbers** per doc type per entity, as at cutover date.
 - **Compliance deadlines — verify every row with KCK (tax agent) and Exceliz (secretary).** These were entered during design and some may be wrong or outdated; my knowledge of Malaysian/HK statutory dates has a January 2026 cutoff and may be stale. Specific things to check: Form C for the two 31-July-FYE entities (SBOXCAP, SBOXAI) is ~28 February, **not** 31 July; the Annual Return in Malaysia is anniversary-of-incorporation based, not a fixed date; and any current-year (FY2025) filings clustered at end-July may be imminent. **Do not let automation populate statutory dates.**
 - **HHIL identifiers:** capture both the Hong Kong Business Registration number (70597712, seen on the existing invoice) and the Malaysian SSM foreign-company number, clearly labelled.
-- **HK property ownership:** reconcile whether the Sha Tin unit belongs to CSK or NCL (the property and recurring-payment sheets currently disagree).
+- ~~**HK property ownership:** reconcile whether the Sha Tin unit belongs to CSK or NCL.~~ **Resolved 2026-07-31:** standardised to **NCL** throughout. CSK remains in the entity register as a director of NCLCAP, marked `Dormant`, with no bank account of its own.
+- **Chart of accounts.** The `ACCOUNTS CODE` column is free text pending the accountant. `08 Code Lists` holds *document-type* codes and controlled vocabularies — it has no chart of accounts, so one needs a home (a new `10 Chart of Accounts` sheet is the natural fit).
+- **Sha Tin tenant name.** `02 Property & Lease` and `04 Recurring Payments` both record the tenant as "Chinese national" — a description, not a name. The real name is a Chinese one; it renders correctly in the document body but cannot form a filename token, so the counterparty field for HK rental documents needs a decision (romanised name, or the property code).
+- **Vendor detail.** 17 vendors are seeded from the recurring payments, but registration numbers, contacts and payment terms are blank rather than guessed. `scripts/audit_registers.py` lists exactly what is outstanding.
 - **Salary slip statutory figures** (EPF/SOCSO/EIS/PCB) must come from the actual payroll computation each month, never be re-keyed or defaulted.
 
 ---
@@ -220,8 +325,8 @@ Build this first; it establishes the pattern the other four templates reuse.
 
 ## 11. Recommended build order (advance on proof, not calendar)
 
-1. `generate-payment-voucher` — the pattern-setter (this brief, §8).
-2. `generate-receiving-voucher` — near-identical (money received; "RECEIVED FM"; RV code).
+1. ~~`generate-payment-voucher`~~ — **built, dry-run only.** The pattern-setter (§8).
+2. `generate-receiving-voucher` — near-identical (money received; "RECEIVED FM"; RV code). Its template already carries every layout fix the PV received.
 3. `generate-salary-slips` — batch: read the month's payroll figures → one slip per employee.
 4. `generate-official-receipt` / `generate-invoice` — pull the tenant + unit address from the Property register.
 5. `monthly-closing-checklist` — generated from the Recurring Payments register.
@@ -229,11 +334,45 @@ Build this first; it establishes the pattern the other four templates reuse.
 
 Gate each: three consecutive clean monthly runs with no manual correction before you build on top of it. Only move to Tier 2 (extraction, drafting, variance detection) once the Tier 1 set is stable.
 
+**What the gate does and does not block.** It blocks building *on top of* a
+skill — above all Tier 2, where an unproven foundation compounds. It does not
+block building a *sibling* Tier 1 skill that merely replicates a proven pattern.
+Receiving Voucher can be built while Payment Voucher accumulates its three
+clean runs; extraction and drafting cannot.
+
 ---
 
-## 12. First prompt to give Claude Code
+## 12. Where to pick up
 
-> "Read `README.md`, then scaffold the repo structure in §3. Inspect `templates/NEK_Document_Templates.xlsx` — the `Payment Voucher` sheet and the `_EntityData` / `_BankAccounts` lookup sheets — and confirm the input (yellow) cell addresses and Control Panel cells you'll write to. Then draft (a) `scripts/ref_and_filename.py`, (b) `scripts/amount_in_words.py`, and (c) the `generate-payment-voucher` skill per §8, with a dry-run mode that fills the template and exports a PDF without touching the counter. Do not implement anything that executes a payment. Show me the plan before writing code."
+The scaffold and the first skill are built. A session starting now should:
+
+> "Read `README.md` and `docs/decisions-log.md`. Run
+> `python scripts/audit_registers.py` to see the current state of the register.
+> Then \<the task\>."
+
+**Immediately available, blocked on nothing:**
+
+- `generate-receiving-voucher` (§11 item 2). The Receiving Voucher sheet has
+  already received every layout fix the Payment Voucher did, and reuses all of
+  `scripts/`. Note it shares the counter gate below, so it will also be
+  dry-run-only until that is wired.
+- `monthly-closing-checklist` (§11 item 5). Generated purely from
+  `04 Recurring Payments` — no document numbers, no counter, no dependency on
+  the accountant. The one piece that would be usable this month.
+
+**Blocked, and on what:**
+
+- **Live issuance** — needs the operator's confirmed starting numbers and a
+  deliberate decision to start consuming real document numbers. Note that with
+  the on-page draft watermark removed, a dry run and an issued voucher are
+  indistinguishable once printed; decide how drafts are marked before wiring.
+- **Official Receipt / Invoice** — need the Sha Tin tenant name and the
+  counterparty rule for rental documents (§9).
+- **Salary slips** — need the payroll figures, which §9 says must never be
+  defaulted or re-keyed.
+
+**Do not** implement anything that executes, schedules or releases a payment.
+Show the plan before writing code.
 
 ---
 
