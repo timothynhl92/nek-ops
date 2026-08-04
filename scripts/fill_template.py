@@ -1,8 +1,10 @@
-"""Write inputs into the Payment Voucher's yellow anchor cells.
+"""Write inputs into a voucher's yellow anchor cells.
 
-Cell addresses were read from the template rather than assumed; see the map in
-:data:`PV_ANCHORS`. The script writes *only* these cells. Everything else on the
-sheet -- letterhead, reference, total -- is a formula and stays untouched (§7).
+Serves the Payment Voucher and the Receiving Voucher, which are cell-for-cell
+identical apart from four labels and the reference prefix. Cell addresses were
+read from the template rather than assumed; see the map in :data:`ANCHORS`. The
+script writes *only* these cells. Everything else on the sheet -- letterhead,
+reference, total -- is a formula and stays untouched (§7).
 
 Deliberately not written: the **signature rules** at F23:H23, F25:H25 and
 F27:H27. Each sits beside a signatory's initials and is signed by hand once the
@@ -30,8 +32,8 @@ CP_REFERENCE = "K7"     # derived
 CP_GUARD = "K8"         # derived
 
 # Document body
-PV_ANCHORS = {
-    "pay_to": "B7",          # merged B7:D7
+ANCHORS = {
+    "counterparty": "B7",     # merged B7:D7 -- payee on a PV, payer on an RV
     "mode_of_payment": "G8",  # merged G8:H8
     "doc_date": "G9",         # merged G9:H9
     # A20 carries the currency label; the words box begins immediately after it
@@ -64,7 +66,10 @@ TOTAL_CELL = "E18"
 DEFAULT_ISSUED_BY = "KN"    # Kelvin Ng
 DEFAULT_CHECKED_BY = "OHY"  # Ong Hooi Yong
 
-SHEET_NAME = "Payment Voucher"
+# The Payment Voucher and Receiving Voucher sheets are cell-for-cell identical
+# apart from four labels and the reference prefix, so they share every anchor
+# above and every routine below.
+SHEET_NAMES = {"PV": "Payment Voucher", "RV": "Receiving Voucher"}
 
 # The only accepted answers for "Mode of Payment :" (H8). The template carries
 # the same three as a dropdown, so a human filling it by hand and a script
@@ -148,7 +153,7 @@ def validate_line_items(items: list[LineItem]) -> None:
         raise FillError("a voucher needs at least one line item")
     if len(items) > MAX_LINE_ITEMS:
         raise FillError(
-            f"{len(items)} line items, but the Payment Voucher grid holds "
+            f"{len(items)} line items, but the voucher grid holds "
             f"{MAX_LINE_ITEMS} (rows {LINE_FIRST_ROW}-{LINE_LAST_ROW}). "
             "Split this across multiple vouchers, or widen the template first "
             "-- silently dropping rows would understate the total."
@@ -159,18 +164,18 @@ def validate_line_items(items: list[LineItem]) -> None:
         if item.amount <= 0:
             raise FillError(
                 f"line {index} has a non-positive amount ({item.amount}); "
-                "a payment voucher must move money"
+                "a voucher must move money"
             )
 
 
-def fill_payment_voucher(
+def fill_voucher(
     ws,
     *,
     entity_code: str,
     bank_code: str,
     sequence: int,
     doc_date: date,
-    pay_to: str,
+    counterparty: str,
     mode_of_payment: str,
     line_items: list[LineItem],
     amount_words: str,
@@ -190,15 +195,15 @@ def fill_payment_voucher(
     ws.Range(CP_BANK).Value = bank_code.upper()
     ws.Range(CP_RUNNING_NO).Value = sequence
 
-    ws.Range(PV_ANCHORS["pay_to"]).Value = pay_to
-    _fit_row(ws, 7, pay_to, WIDTH_PAYEE)
-    ws.Range(PV_ANCHORS["mode_of_payment"]).Value = mode_of_payment
-    ws.Range(PV_ANCHORS["doc_date"]).Value = excel_serial(doc_date)
-    ws.Range(PV_ANCHORS["amount_in_words"]).Value = amount_words
+    ws.Range(ANCHORS["counterparty"]).Value = counterparty
+    _fit_row(ws, 7, counterparty, WIDTH_PAYEE)
+    ws.Range(ANCHORS["mode_of_payment"]).Value = mode_of_payment
+    ws.Range(ANCHORS["doc_date"]).Value = excel_serial(doc_date)
+    ws.Range(ANCHORS["amount_in_words"]).Value = amount_words
     _fit_row(ws, 20, amount_words, WIDTH_WORDS)
-    ws.Range(PV_ANCHORS["issued_by"]).Value = issued_by
-    ws.Range(PV_ANCHORS["checked_by"]).Value = checked_by
-    ws.Range(PV_ANCHORS["approved_by"]).Value = approved_by
+    ws.Range(ANCHORS["issued_by"]).Value = issued_by
+    ws.Range(ANCHORS["checked_by"]).Value = checked_by
+    ws.Range(ANCHORS["approved_by"]).Value = approved_by
 
     # Clear the whole grid first so a shorter run cannot inherit stale rows.
     # Cleared as one block: Excel refuses ClearContents on a single cell inside

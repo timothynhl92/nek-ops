@@ -56,10 +56,14 @@ nek-ops/
 │   └── NEK_Document_Templates.xlsx  # 8 sheets: 5 documents + 3 lookup sheets
 ├── .claude/
 │   └── skills/                   # Skills, checked into the repo
-│       └── generate-payment-voucher/
+│       ├── generate-payment-voucher/
+│       │   ├── SKILL.md
+│       │   └── generate_pv.py    # thin wrapper over scripts/voucher.py
+│       └── generate-receiving-voucher/
 │           ├── SKILL.md
-│           └── generate_pv.py
+│           └── generate_rv.py    # ditto
 ├── scripts/                      # shared, reusable Python
+│   ├── voucher.py                # the shared PV/RV pipeline
 │   ├── excel_engine.py           # Excel COM: recalculation + PDF export (see §7)
 │   ├── registers.py              # read the register; refresh the template mirrors
 │   ├── counters.py               # the sequence authority (see §5)
@@ -326,7 +330,7 @@ not yet exist.
 ## 11. Recommended build order (advance on proof, not calendar)
 
 1. ~~`generate-payment-voucher`~~ — **built, dry-run only.** The pattern-setter (§8).
-2. `generate-receiving-voucher` — near-identical (money received; "RECEIVED FM"; RV code). Its template already carries every layout fix the PV received.
+2. ~~`generate-receiving-voucher`~~ — **built, dry-run only.** Money received; "RECEIVED FM"; `RV` code. Shares `scripts/voucher.py` with the Payment Voucher — the two sheets are cell-for-cell identical apart from four labels and the reference prefix, so each skill is a thin wrapper naming its document type.
 3. `generate-salary-slips` — batch: read the month's payroll figures → one slip per employee.
 4. `generate-official-receipt` / `generate-invoice` — pull the tenant + unit address from the Property register.
 5. `monthly-closing-checklist` — generated from the Recurring Payments register.
