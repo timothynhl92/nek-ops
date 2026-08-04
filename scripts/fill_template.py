@@ -73,12 +73,18 @@ PAYMENT_MODES = ("IBG", "Cheque", "TT")
 # Approximate characters per line in the merged bands, derived from the column
 # widths (A13 + B22 + C8 + D13 = 56 for the description band; B..H = 92 for the
 # words band). Used only to pick a row height -- see :func:`_fit_row`.
-# Recalibrated for the 12pt body font and the narrower payee band (B:D).
-WIDTH_DESCRIPTION = 46
-WIDTH_WORDS = 58   # C..H, after the label took A:B
-WIDTH_PAYEE = 36   # B:D, after column E was given to the reference labels
-LINE_HEIGHT = 16.0
-MIN_ROW_HEIGHT = 19.0
+# Calibrated for the 8pt body font on half-A4 stock. Column widths are measured
+# in units of the workbook's standard font, so a smaller cell font fits more
+# characters per unit -- these are larger than the A4 figures, not smaller.
+WIDTH_DESCRIPTION = 70   # A:D
+WIDTH_WORDS = 87         # C:H, after the label took A:B
+WIDTH_PAYEE = 54         # B:D
+LINE_HEIGHT = 10.0
+MIN_ROW_HEIGHT = 12.0
+
+# Vertical budget on A5 landscape: 148mm less 0.3in margins, in points. A run
+# that would push past this is reported rather than silently scaled down.
+USABLE_HEIGHT = 340.0
 
 
 class FillError(ValueError):
@@ -90,6 +96,17 @@ class LineItem:
     description: str
     amount: Decimal
     account_code: str = ""
+
+
+def content_height(ws, last_row: int = 27) -> float:
+    """Total height of the printed rows, in points.
+
+    Worth measuring because the sheet is set to fit one page. If the content
+    grows past the sheet, Excel does not spill to a second page -- it silently
+    scales everything down, which is exactly what made hairline rules vanish in
+    print before. Better to say so than to let it shrink unnoticed.
+    """
+    return sum(ws.Rows(row).RowHeight for row in range(1, last_row + 1))
 
 
 def _fit_row(ws, row: int, text: str, width_chars: int) -> None:

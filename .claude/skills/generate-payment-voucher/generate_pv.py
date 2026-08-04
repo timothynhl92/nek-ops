@@ -36,7 +36,9 @@ from fill_template import (  # noqa: E402
     PRINTED_REFERENCE,
     SHEET_NAME,
     TOTAL_CELL,
+    USABLE_HEIGHT,
     LineItem,
+    content_height,
     fill_payment_voucher,
     validate_line_items,
 )
@@ -207,6 +209,14 @@ def generate(args: argparse.Namespace) -> Path:
 
             app.CalculateFullRebuild()
             _verify(ws, reference, total)
+
+            height = content_height(ws)
+            if height > USABLE_HEIGHT:
+                print(
+                    f"  note        content is {height:.0f}pt against a "
+                    f"{USABLE_HEIGHT:.0f}pt half-A4 budget; Excel will scale "
+                    "it down to fit. Shorten a description to avoid that."
+                )
 
             export_worksheet(
                 app, wb, SHEET_NAME, destination, draft_header=DRAFT_HEADER
