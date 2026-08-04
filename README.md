@@ -59,11 +59,15 @@ nek-ops/
 │       ├── generate-payment-voucher/
 │       │   ├── SKILL.md
 │       │   └── generate_pv.py    # thin wrapper over scripts/voucher.py
-│       └── generate-receiving-voucher/
+│       ├── generate-receiving-voucher/
+│       │   ├── SKILL.md
+│       │   └── generate_rv.py    # ditto
+│       └── monthly-closing-checklist/
 │           ├── SKILL.md
-│           └── generate_rv.py    # ditto
+│           └── generate_checklist.py
 ├── scripts/                      # shared, reusable Python
 │   ├── voucher.py                # the shared PV/RV pipeline
+│   ├── recurring.py              # read 04 Recurring Payments; work out timing
 │   ├── excel_engine.py           # Excel COM: recalculation + PDF export (see §7)
 │   ├── registers.py              # read the register; refresh the template mirrors
 │   ├── counters.py               # the sequence authority (see §5)
@@ -74,7 +78,8 @@ nek-ops/
 ├── counters/
 │   └── counters.json             # running sequence per doctype/entity/year
 ├── output/                       # generated PDFs  (git-ignored)
-│   └── dryrun/                   # watermark-free drafts, DRAFT_ prefixed
+│   ├── dryrun/                   # watermark-free drafts, DRAFT_ prefixed
+│   └── checklists/               # monthly closing checklists
 └── docs/
     ├── house-style.md
     ├── naming-convention.md
@@ -339,6 +344,7 @@ not yet exist.
 - **Sha Tin tenant name.** `02 Property & Lease` and `04 Recurring Payments` both record the tenant as "Chinese national" — a description, not a name. The real name is a Chinese one, which renders correctly in the document body (verified) but cannot form a filename token. **The filename half is resolved** — rental documents file by unit (§5) — so what remains is simply recording the tenant's actual name in the register.
 - **Hong Kong units are stored as numbers.** `02 Property & Lease` holds units `27` and `28` as numeric cells, so Excel returns them as `27.0`. Handled in `registers._key()`, but the register would be tidier with them as text.
 - **Vendor detail.** 17 vendors are seeded from the recurring payments, but registration numbers, contacts and payment terms are blank rather than guessed. `scripts/audit_registers.py` lists exactly what is outstanding.
+- **Recurring payment due dates — 36 of 65 rows record `N/A`**, including every entity's annual audit, tax and secretarial fees. They are not unscheduled; the timing was never captured. The monthly closing checklist lists them separately every month rather than dropping them, but they cannot appear in the right month until a Due Day is recorded. This is the single highest-value gap in the register.
 - **Salary slip statutory figures** (EPF/SOCSO/EIS/PCB) must come from the actual payroll computation each month, never be re-keyed or defaulted.
 
 ---
@@ -359,7 +365,7 @@ not yet exist.
 2. ~~`generate-receiving-voucher`~~ — **built, dry-run only.** Money received; "RECEIVED FM"; `RV` code. Shares `scripts/voucher.py` with the Payment Voucher — the two sheets are cell-for-cell identical apart from four labels and the reference prefix, so each skill is a thin wrapper naming its document type.
 3. `generate-salary-slips` — batch: read the month's payroll figures → one slip per employee.
 4. `generate-official-receipt` / `generate-invoice` — pull the tenant + unit address from the Property register.
-5. `monthly-closing-checklist` — generated from the Recurring Payments register.
+5. ~~`monthly-closing-checklist`~~ — **built and usable now.** Generated from the Recurring Payments register. Consumes no document number, so unlike the vouchers it is not gated on the counter.
 6. `renewal-and-compliance-alerts` — from the Property + Compliance registers.
 
 Gate each: three consecutive clean monthly runs with no manual correction before you build on top of it. Only move to Tier 2 (extraction, drafting, variance detection) once the Tier 1 set is stable.
@@ -382,9 +388,6 @@ The scaffold and the first skill are built. A session starting now should:
 
 **Immediately available, blocked on nothing:**
 
-- `monthly-closing-checklist` (§11 item 5). Generated purely from
-  `04 Recurring Payments` — no document numbers, no counter, no dependency on
-  the accountant. The one piece that would be usable this month.
 - `generate-official-receipt` / `generate-invoice` (§11 item 4). The
   counterparty rule they were waiting on is now settled (§5, file by unit).
   They need the outward-facing layout reviewed the way the vouchers were, and
