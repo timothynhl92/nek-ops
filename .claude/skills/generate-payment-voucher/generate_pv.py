@@ -27,7 +27,12 @@ sys.path.insert(0, str(REPO_ROOT / "scripts"))
 
 import counters  # noqa: E402
 from amount_in_words import CURRENCIES, words_for_cell  # noqa: E402
-from excel_engine import excel_app, export_worksheet, open_workbook  # noqa: E402
+from excel_engine import (  # noqa: E402
+    excel_app,
+    export_worksheet,
+    open_workbook,
+    pdf_page_size_mm,
+)
 from fill_template import (  # noqa: E402
     CP_GUARD,
     DEFAULT_CHECKED_BY,
@@ -56,8 +61,12 @@ REGISTER = REPO_ROOT / "registers" / "NEK_Master_Registers.xlsx"
 DRYRUN_DIR = REPO_ROOT / "output" / "dryrun"
 
 DOCTYPE = "PV"
+# A dry run is marked by its filename and its folder, not on the page. The
+# on-page "DRAFT - NOT ISSUED" header was removed on 2026-07-31 because it ate
+# the top margin of a half-page voucher. Worth revisiting when the live counter
+# is wired: at that point a draft and an issued voucher become indistinguishable
+# once printed.
 DRAFT_PREFIX = "DRAFT_"
-DRAFT_HEADER = "DRAFT - NOT ISSUED - no counter consumed"
 
 # Whatever the wording table covers. Driven from one place so the template's
 # printed label and the script's written words cannot disagree.
@@ -66,6 +75,10 @@ SUPPORTED_CURRENCIES = set(CURRENCIES)
 # Rounding tolerance when comparing Excel's total to Python's. Excel returns a
 # float; the line items are Decimals.
 TOTAL_TOLERANCE = Decimal("0.005")
+
+# The voucher prints on the top half of an A4 portrait sheet.
+A4_WIDTH_MM, A4_HEIGHT_MM = 210.0, 297.0
+PAPER_TOLERANCE_MM = 3.0
 
 
 class GenerationError(RuntimeError):
@@ -218,14 +231,35 @@ def generate(args: argparse.Namespace) -> Path:
                     "it down to fit. Shorten a description to avoid that."
                 )
 
-            export_worksheet(
-                app, wb, SHEET_NAME, destination, draft_header=DRAFT_HEADER
-            )
+            export_worksheet(app, wb, SHEET_NAME, destination, printer=args.printer)
 
             if args.keep_xlsx:
                 wb.SaveCopyAs(str(destination.with_suffix(".xlsx")))
 
+    _check_paper(destination)
     return destination
+
+
+def _check_paper(destination: Path) -> None:
+    """Warn when the driver substituted a different paper size.
+
+    Excel reports the size it was asked for even when the driver overrides it.
+    The Microsoft virtual printers swap A4 for US Letter, so this is checked
+    against the file rather than trusted from the application.
+    """
+    size = pdf_page_size_mm(destination)
+    if size is None:
+        return
+    width, height = size
+    if abs(width - A4_WIDTH_MM) <= PAPER_TOLERANCE_MM and abs(height - A4_HEIGHT_MM) <= PAPER_TOLERANCE_MM:
+        return
+    print(
+        f"  warning     exported at {width:.0f} x {height:.0f} mm, not A4 "
+        f"({A4_WIDTH_MM:.0f} x {A4_HEIGHT_MM:.0f}).\n"
+        "              The Microsoft virtual printers substitute US Letter for\n"
+        "              A4. Either set that printer's default paper to A4 in\n"
+        "              Windows, or pass --printer with an A4 device."
+    )
 
 
 def _verify(ws, reference: str, total: Decimal) -> None:
@@ -290,6 +324,12 @@ def build_parser() -> argparse.ArgumentParser:
         help="initials of the approver -- no default, approval is deliberate",
     )
     p.add_argument("--keep-xlsx", action="store_true", help="save the filled workbook too")
+    p.add_argument(
+        "--printer",
+        default=None,
+        help="printer whose driver lays out the export; use an A4 device if the "
+        "default substitutes US Letter",
+    )
     p.add_argument(
         "--live",
         action="store_true",

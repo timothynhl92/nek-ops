@@ -34,8 +34,9 @@ PV_ANCHORS = {
     "pay_to": "B7",          # merged B7:D7
     "mode_of_payment": "G8",  # merged G8:H8
     "doc_date": "G9",         # merged G9:H9
-    # A20:B20 carries the currency label; the words sit in the box beside it.
-    "amount_in_words": "C20",
+    # A20 carries the currency label; the words box begins immediately after it
+    # so the two read as one sentence.
+    "amount_in_words": "B20",
     # Renamed 2026-07-31: the voucher is issued, checked, then approved. The
     # old "prepared by" role is now "issued by", and the old "issued by" is
     # "checked by"; the cells are unchanged.
@@ -76,15 +77,17 @@ PAYMENT_MODES = ("IBG", "Cheque", "TT")
 # Calibrated for the 8pt body font on half-A4 stock. Column widths are measured
 # in units of the workbook's standard font, so a smaller cell font fits more
 # characters per unit -- these are larger than the A4 figures, not smaller.
-WIDTH_DESCRIPTION = 70   # A:D
-WIDTH_WORDS = 87         # C:H, after the label took A:B
+WIDTH_DESCRIPTION = 74   # A:D
+WIDTH_WORDS = 115        # B:H
 WIDTH_PAYEE = 54         # B:D
 LINE_HEIGHT = 10.0
 MIN_ROW_HEIGHT = 12.0
 
-# Vertical budget on A5 landscape: 148mm less 0.3in margins, in points. A run
-# that would push past this is reported rather than silently scaled down.
-USABLE_HEIGHT = 340.0
+# The voucher occupies the TOP HALF of an A4 portrait sheet, so it can be
+# guillotined in two. Budget: half of 297mm less the 0.3in top margin, in
+# points. A run that would push past this is reported rather than left to
+# overrun the cut line unnoticed.
+USABLE_HEIGHT = 400.0
 
 
 class FillError(ValueError):

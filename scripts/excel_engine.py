@@ -147,7 +147,22 @@ def export_worksheet(
     # Switch printers *before* touching PageSetup: writing any PageSetup
     # property round-trips to the active printer's driver, so setting a header
     # while the WSD default is selected stalls exactly as the export does.
+    #
+    # Read the sheet's intended paper first, because changing the active
+    # printer resets PaperSize and Orientation to that driver's defaults --
+    # which silently exported an A4 voucher as US Letter until it was caught.
+    intended_paper = intended_orientation = None
+    with contextlib.suppress(Exception):
+        intended_paper = ws.PageSetup.PaperSize
+        intended_orientation = ws.PageSetup.Orientation
+
     original_printer = _use_local_printer(app, printer)
+
+    for prop, value in (("PaperSize", intended_paper),
+                        ("Orientation", intended_orientation)):
+        if value is not None:
+            with contextlib.suppress(Exception):
+                setattr(ws.PageSetup, prop, value)
     if draft_header is not None:
         ws.PageSetup.CenterHeader = draft_header
 
@@ -170,6 +185,29 @@ def export_worksheet(
     if not dest.is_file():
         raise RecalcError(f"Excel reported success but {dest} was not written")
     return dest
+
+
+def pdf_page_size_mm(path: str | Path) -> tuple[float, float] | None:
+    """Read the first page's size from a PDF, in millimetres.
+
+    Worth checking after every export. Excel reports the paper size it was
+    asked for even when the driver quietly substitutes another: the Microsoft
+    virtual printers swap A4 for US Letter, so a voucher can be exported at
+    216x279 while every property still reads A4.
+    """
+    import re
+
+    raw = Path(path).read_bytes()
+    match = re.search(rb"/MediaBox\s*\[\s*([\d.\s-]+)\]", raw)
+    if not match:
+        return None
+    nums = [float(n) for n in match.group(1).split()]
+    if len(nums) < 4:
+        return None
+    return (
+        (nums[2] - nums[0]) * 25.4 / 72,
+        (nums[3] - nums[1]) * 25.4 / 72,
+    )
 
 
 def sheet_names(path: str | Path) -> list[str]:

@@ -66,11 +66,18 @@ script never writes to those rules.
 6. Verify the rebuilt sheet: the guard cell is empty, the printed reference
    matches the expected one, and the sheet total equals the independently
    computed sum. Abort on any disagreement.
-7. Export the `Payment Voucher` sheet to a single-page **A5 landscape**
-   (210 × 148 mm, half an A4 sheet) PDF in `output/dryrun/`, named per §5.
-   Vouchers are printed on half-A4 stock, which is why the sizing is tight;
-   the run reports if content would exceed the page rather than letting Excel
-   silently scale it down.
+7. Export the `Payment Voucher` sheet to a single-page **A4 portrait** PDF in
+   `output/dryrun/`, named per §5. The voucher occupies the **top half** of the
+   sheet so it can be guillotined in two, which is how these are filed. The run
+   reports if content would exceed that half, rather than letting Excel scale
+   it down silently.
+
+**Printer note.** `ExportAsFixedFormat` lays out through the active printer's
+driver, and the Microsoft virtual printers substitute US Letter for A4 while
+still reporting A4 to Excel. The run measures the finished PDF and warns if the
+paper is wrong. Either set "Microsoft Print to PDF" to A4 in Windows printer
+preferences, or pass `--printer` with an A4 device (any of the Brother
+printers).
 
 Step 6 exists because a clean recalculation proves formulas *evaluate*, not
 that they are *right* (§7). It has already caught one real defect.
