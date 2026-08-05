@@ -7,12 +7,22 @@
 - `NEK_Master_Registers.xlsx` — the reference-data layer (single source of truth).
 - `NEK_Document_Templates.xlsx` — five standardized, entity-driven document templates.
 
-**Status now (2026-07-31).** The generation layer exists and works, in dry-run
-only. `generate-payment-voucher` produces a correctly-named, correctly-numbered
-PDF from structured inputs, but it **cannot issue a document**: it reads the
-next sequence number without consuming it, and `--live` fails by design.
-Wiring the counter is a separate, reviewed change that is waiting on the
-operator's confirmed starting numbers.
+**Status now (2026-08-05).** Three skills are built:
+
+| Skill | State |
+|---|---|
+| `generate-payment-voucher` | Works. **Dry-run only** — cannot issue a document. |
+| `generate-receiving-voucher` | Works. **Dry-run only.** Shares the PV pipeline. |
+| `monthly-closing-checklist` | Works and is **usable now** — consumes no document number, so it is not gated on the counter. |
+
+The two vouchers produce correctly-named, correctly-numbered PDFs from
+structured inputs, but read the next sequence number **without consuming it**;
+`--live` fails by design. Wiring the counter is a separate, reviewed change
+waiting on the operator's confirmed starting numbers.
+
+The recurring register was completed on 2026-08-05: 64 of 65 items now carry a
+usable due date, so the closing checklist places every obligation in its proper
+month.
 
 Sections below have been corrected where the build diverged from the design.
 Every such change is dated and explained in `docs/decisions-log.md` — read that
@@ -68,6 +78,7 @@ nek-ops/
 ├── scripts/                      # shared, reusable Python
 │   ├── voucher.py                # the shared PV/RV pipeline
 │   ├── recurring.py              # read 04 Recurring Payments; work out timing
+│   ├── due_date_worklist.py      # ask the operator for missing due dates
 │   ├── excel_engine.py           # Excel COM: recalculation + PDF export (see §7)
 │   ├── registers.py              # read the register; refresh the template mirrors
 │   ├── counters.py               # the sequence authority (see §5)
@@ -79,7 +90,8 @@ nek-ops/
 │   └── counters.json             # running sequence per doctype/entity/year
 ├── output/                       # generated PDFs  (git-ignored)
 │   ├── dryrun/                   # watermark-free drafts, DRAFT_ prefixed
-│   └── checklists/               # monthly closing checklists
+│   ├── checklists/               # monthly closing checklists
+│   └── worklists/                # register-gap forms for the operator
 └── docs/
     ├── house-style.md
     ├── naming-convention.md
@@ -344,7 +356,8 @@ not yet exist.
 - **Sha Tin tenant name.** `02 Property & Lease` and `04 Recurring Payments` both record the tenant as "Chinese national" — a description, not a name. The real name is a Chinese one, which renders correctly in the document body (verified) but cannot form a filename token. **The filename half is resolved** — rental documents file by unit (§5) — so what remains is simply recording the tenant's actual name in the register.
 - **Hong Kong units are stored as numbers.** `02 Property & Lease` holds units `27` and `28` as numeric cells, so Excel returns them as `27.0`. Handled in `registers._key()`, but the register would be tidier with them as text.
 - **Vendor detail.** 17 vendors are seeded from the recurring payments, but registration numbers, contacts and payment terms are blank rather than guessed. `scripts/audit_registers.py` lists exactly what is outstanding.
-- **Recurring payment due dates — 36 of 65 rows record `N/A`**, including every entity's annual audit, tax and secretarial fees. They are not unscheduled; the timing was never captured. The monthly closing checklist lists them separately every month rather than dropping them, but they cannot appear in the right month until a Due Day is recorded. This is the single highest-value gap in the register.
+- ~~**Recurring payment due dates — 36 of 65 rows record `N/A`.**~~ **Resolved 2026-08-05.** 64 of 65 items now carry a usable due date. The remaining one is HHIL's secretarial fee, recorded at **RM 0** — as a foreign company it has no fee to pay, so it needs no due date and is reported under "recorded, no payment due" rather than as a gap.
+- **The completeness report over-reports.** It flags `N/A` in `01 Entity` for NCL, CSK and WT — natural persons and a BVI entity, for which no registration number or financial year end is *correct*, not missing. Same for the Malaysian quit-rent and assessment columns on the Hong Kong property. Roughly 19 of the 21 entity "gaps" and all 3 property ones are legitimate. Worth teaching the audit to tell "not applicable" from "not yet filled", or it trains the reader to ignore it.
 - **Salary slip statutory figures** (EPF/SOCSO/EIS/PCB) must come from the actual payroll computation each month, never be re-keyed or defaulted.
 
 ---
@@ -380,28 +393,58 @@ clean runs; extraction and drafting cannot.
 
 ## 12. Where to pick up
 
-The scaffold and the first skill are built. A session starting now should:
+Start every session with:
 
-> "Read `README.md` and `docs/decisions-log.md`. Run
-> `python scripts/audit_registers.py` to see the current state of the register.
-> Then \<the task\>."
+> Read `README.md` and `docs/decisions-log.md`, then run
+> `python scripts/audit_registers.py` to see the register's current state.
 
-**Immediately available, blocked on nothing:**
+### Working commands
 
-- `generate-official-receipt` / `generate-invoice` (§11 item 4). The
-  counterparty rule they were waiting on is now settled (§5, file by unit).
-  They need the outward-facing layout reviewed the way the vouchers were, and
-  the `Invoice` and `Official Receipt` sheets have had the letterhead, paper
-  and currency work but **not** the border, signatory or spacing passes.
+```bash
+# Payment voucher (dry run). Only the approver must be stated.
+python .claude/skills/generate-payment-voucher/generate_pv.py \
+  --entity NEK --bank BOC --date 2026-09-01 --pay-to "KWSP (EPF)" \
+  --line "EPF Payable - Aug 2026|2949.00|5100-01" --approved-by NCL
 
-**Blocked, and on what:**
+# Receiving voucher. Rental receipts file under the unit.
+python .claude/skills/generate-receiving-voucher/generate_rv.py \
+  --entity HHIL --bank BOC --date 2026-09-01 --received-from "Yan Zhou" \
+  --unit 1G-11-03 --line "Rental 1G-11-03 - Sep 2026|10000.00|4100-01" \
+  --approved-by NCL
 
-- **Live issuance** — needs the operator's confirmed starting numbers and a
-  deliberate decision to start consuming real document numbers. Note that with
+# Monthly closing checklist. Usable now; no counter involved.
+python .claude/skills/monthly-closing-checklist/generate_checklist.py \
+  --month 2026-09 --pdf
+```
+
+**Add `--printer "Brother DCP-L2550DW series"` to anything producing a PDF**
+until "Microsoft Print to PDF" is set to A4 in Windows — the Microsoft virtual
+printers substitute US Letter while still reporting A4 (§7).
+
+### Next: `generate-official-receipt` and `generate-invoice` (§11 item 4)
+
+Everything they were blocked on is settled — the counterparty rule (§5, file by
+unit), the tenant's name, and the Hong Kong property codes. Six rental receipts
+a month flow through them, making them the highest-volume outward documents.
+
+What remains is a **layout review**. The `Invoice` and `Official Receipt`
+sheets have had the letterhead, paper-size and currency passes, but **not** the
+border, signatory or spacing work the vouchers went through. Expect one or two
+rounds of printed review; the Payment Voucher took four before the pattern was
+established, and those lessons are in §7 and the decisions log.
+
+Note both are outward-facing (§4): branded letterhead, **no signatory block**,
+and a "Computer-generated" footer — unlike the vouchers.
+
+### Blocked, and on what
+
+- **Live issuance** — needs the operator's confirmed starting numbers from the
+  accountant, and a deliberate decision to begin consuming real document
+  numbers. **All three voucher-type skills are gated on this.** Note that with
   the on-page draft watermark removed, a dry run and an issued voucher are
   indistinguishable once printed; decide how drafts are marked before wiring.
-  Both vouchers are gated on this, so neither produces an issuable document
-  until it is done.
+- **Chart of accounts** — with the accountant. `ACCOUNTS CODE` is free text
+  until it exists, and `08 Code Lists` has no home for it (§9).
 - **Salary slips** — need the payroll figures, which §9 says must never be
   defaulted or re-keyed. The `Salary Slip` sheet also still hard-codes MYR in
   seventeen cells (deliberately — Malaysian payroll is MYR by law).

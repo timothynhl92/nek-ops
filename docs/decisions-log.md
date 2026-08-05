@@ -32,6 +32,36 @@ afterwards.
 
 ---
 
+## 2026-08-05 — Recurring due dates recorded; per-month days preserved
+
+The operator completed the due-date worklist. 64 of 65 active recurring items
+now carry usable timing, up from 29, so the closing checklist's "timing not
+recorded" section is empty.
+
+**Quarterly entries carry a different day per month** — "31 January, 30 April,
+31 July, 30 October". The parser originally took the first day it found and
+applied it to all four, which reported some a day out. It now reads
+day-and-month pairs and keeps the pairing. The single-date and
+"Every 15 of the month" forms are unaffected.
+
+**HHIL's secretarial fee is RM 0** — as a foreign company it has no fee to pay.
+A zero-value obligation needs no due date, so an absent one is not a gap. It
+would then have vanished from the checklist entirely, so zero-value items get
+their own short section: absent from the payable list *deliberately*, and
+visibly so.
+
+---
+
+## 2026-08-05 — Sha Tin tenant recorded by name
+
+`02 Property & Lease` and `04 Recurring Payments` recorded the tenant as
+"Chinese national", a description rather than a name. Both now hold her actual
+name. Verified as an exact round-trip through Excel; it renders correctly in a
+generated document. Filenames were the obstacle and no longer are — rental
+documents file by unit.
+
+---
+
 ## 2026-07-31 — Rental documents are filed by unit, not by tenant
 
 `--unit` sets the filename's counterparty field to the unit or property code.
