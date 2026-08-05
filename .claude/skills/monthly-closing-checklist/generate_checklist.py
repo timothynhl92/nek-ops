@@ -78,7 +78,8 @@ def _section(ws, row: int, title: str, note: str = "") -> int:
 
 
 def build(ws, year: int, month: int, due: list[Recurring],
-          unknown: list[Recurring], entity: str | None) -> None:
+          unknown: list[Recurring], zero_value: list[Recurring],
+          entity: str | None) -> None:
     span = len(COLUMNS)
     period = date(year, month, 1).strftime("%B %Y")
     scope = entity.upper() if entity else "all entities"
@@ -164,6 +165,22 @@ def build(ws, year: int, month: int, due: list[Recurring],
         block.Borders.Weight = XL_THIN
         block.Interior.Color = NOTE_FILL
 
+    if zero_value:
+        row = _section(
+            ws, row,
+            f"RECORDED, NO PAYMENT DUE  ({len(zero_value)} items)",
+            "Obligations carried at zero value. Listed so their absence from "
+            "the checklist above is deliberate and visible, not an oversight.",
+        )
+        for item in zero_value:
+            ws.Cells(row, 1).Value = item.ref
+            ws.Cells(row, 2).Value = item.entity
+            ws.Cells(row, 3).Value = item.counterparty
+            ws.Cells(row, 4).Value = item.description
+            ws.Cells(row, 5).Value = item.notes or "zero value recorded"
+            row += 1
+        row += 1
+
     ws.Rows(1).RowHeight = 20
     ws.PageSetup.PaperSize = XL_PAPER_A4
     ws.PageSetup.Orientation = XL_LANDSCAPE
@@ -191,13 +208,18 @@ def main() -> int:
 
     items = load_recurring(REGISTER)
     due, unknown = split_for_month(items, year, month, args.entity)
+    scoped = [i for i in items
+              if not args.entity or i.entity.upper() == args.entity.upper()]
+    zero_value = [i for i in scoped if i.is_zero_value]
 
     print(f"Monthly closing checklist - {date(year, month, 1):%B %Y}")
     print(f"  register    {len(items)} active recurring items")
     print(f"  due         {len(due)}")
     print(f"  no timing   {len(unknown)}  (listed separately, not dropped)")
+    if zero_value:
+        print(f"  zero value  {len(zero_value)}  (no payment due; listed for visibility)")
 
-    if not due and not unknown:
+    if not due and not unknown and not zero_value:
         print("\nNothing to list.")
         return 0
 
@@ -210,7 +232,7 @@ def main() -> int:
         try:
             ws = wb.Worksheets(1)
             ws.Name = f"{year}-{month:02d}"
-            build(ws, year, month, due, unknown, args.entity)
+            build(ws, year, month, due, unknown, zero_value, args.entity)
             wb.SaveAs(str(destination))
             if args.pdf:
                 export_worksheet(app, wb, ws.Name, destination.with_suffix(".pdf"),

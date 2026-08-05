@@ -51,6 +51,11 @@ class Recurring:
     due_text: str
     due_day: int | None
     due_months: frozenset[int]   # empty when unknown
+    # Per-month day, where the register gives one. Quarterly entries are often
+    # written "31 January, 30 April, 31 July, 30 October" -- month-end dates
+    # that differ by month. Taking a single day for all four would report some
+    # of them a day out.
+    due_day_by_month: dict[int, int]
     method: str
     bank_account: str
     approver: str
@@ -66,6 +71,16 @@ class Recurring:
             return self.due_day is not None
         return bool(self.due_months)
 
+    @property
+    def is_zero_value(self) -> bool:
+        """A recorded obligation that costs nothing.
+
+        HHIL's secretarial fee is RM 0 — as a foreign company it has no fee to
+        pay. The row is worth keeping so the obligation stays visible, but it
+        needs no due date, so it should not be nagged about as missing one.
+        """
+        return self.amount is not None and self.amount == 0
+
     def due_in(self, year: int, month: int) -> bool:
         """Does this item fall due in the given month?"""
         if not self.timing_known:
@@ -76,12 +91,13 @@ class Recurring:
 
     def due_date(self, year: int, month: int) -> date | None:
         """The due date within the month, clamped to the month's length."""
-        if self.due_day is None:
+        day = self.due_day_by_month.get(month, self.due_day)
+        if day is None:
             return None
         import calendar
 
         last = calendar.monthrange(year, month)[1]
-        return date(year, month, min(self.due_day, last))
+        return date(year, month, min(day, last))
 
 
 def _text(value: object) -> str:
@@ -103,25 +119,46 @@ def _amount(value: object) -> tuple[str, Decimal | None]:
         return text, None
 
 
-def parse_due(value: object, frequency: str) -> tuple[int | None, frozenset[int]]:
-    """Return ``(day_of_month, months)`` from the register's Due Day cell."""
+def parse_due(
+    value: object, frequency: str
+) -> tuple[int | None, frozenset[int], dict[int, int]]:
+    """Return ``(day_of_month, months, day_by_month)`` from the Due Day cell.
+
+    Handles the shapes the register actually uses: a bare number, "Every 15 of
+    the month", "December 31", "31 January, 30 April, 31 July, 30 October".
+    Where each month carries its own day, that pairing is preserved -- those
+    quarterly entries are month-end dates and differ by month.
+    """
     if isinstance(value, (int, float)) and not isinstance(value, bool):
         day = int(value)
         if 1 <= day <= 31:
             # A bare day with a non-monthly frequency tells us the day but not
             # which months, so the months stay unknown.
             months = frozenset(range(1, 13)) if frequency.lower() in MONTHLY else frozenset()
-            return day, months
-        return None, frozenset()
+            return day, months, {}
+        return None, frozenset(), {}
 
     text = _text(value)
     if text.lower() in NULL_TOKENS:
-        return None, frozenset()
+        return None, frozenset(), {}
+
+    # Try to read "<day> <month>" / "<month> <day>" pairs chunk by chunk.
+    day_by_month: dict[int, int] = {}
+    for chunk in re.split(r",|\band\b", text, flags=re.I):
+        lowered = chunk.lower()
+        found = [n for name, n in MONTH_NAMES.items() if name in lowered]
+        days = [int(d) for d in re.findall(r"\b(\d{1,2})\b", chunk) if 1 <= int(d) <= 31]
+        if len(found) == 1 and days:
+            day_by_month[found[0]] = days[0]
 
     lowered = text.lower()
     months = frozenset(n for name, n in MONTH_NAMES.items() if name in lowered)
     days = [int(d) for d in re.findall(r"\b(\d{1,2})\b", text) if 1 <= int(d) <= 31]
-    return (days[0] if days else None), months
+    default_day = days[0] if days else None
+    if day_by_month:
+        months = frozenset(day_by_month)
+        default_day = day_by_month[min(day_by_month)]
+    return default_day, months, day_by_month
 
 
 def load_recurring(register_path: str | Path) -> list[Recurring]:
@@ -141,7 +178,7 @@ def load_recurring(register_path: str | Path) -> list[Recurring]:
                 continue
             frequency = _text(row[9])
             amount_text, amount = _amount(row[7])
-            day, months = parse_due(row[10], frequency)
+            day, months, day_by_month = parse_due(row[10], frequency)
             items.append(
                 Recurring(
                     ref=ref,
@@ -157,6 +194,7 @@ def load_recurring(register_path: str | Path) -> list[Recurring]:
                     due_text=_text(row[10]),
                     due_day=day,
                     due_months=months,
+                    due_day_by_month=day_by_month,
                     method=_text(row[11]),
                     bank_account=_text(row[12]),
                     approver=_text(row[13]),
@@ -182,7 +220,8 @@ def split_for_month(
     if entity:
         items = [i for i in items if i.entity.upper() == entity.upper()]
     due = [i for i in items if i.due_in(year, month)]
-    unknown = [i for i in items if not i.timing_known]
+    # A zero-value obligation needs no due date, so an absent one is not a gap.
+    unknown = [i for i in items if not i.timing_known and not i.is_zero_value]
     due.sort(key=lambda i: (i.due_day or 99, i.entity, i.counterparty))
     unknown.sort(key=lambda i: (i.frequency, i.category, i.counterparty, i.entity))
     return due, unknown
